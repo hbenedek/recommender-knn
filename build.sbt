@@ -1,13 +1,18 @@
 name := "m1_yourid"
 version := "1.0"
-maintainer := "your.name@epfl.ch"
 
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.0" % Test
 libraryDependencies += "org.rogach" %% "scallop" % "4.0.2"
-libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.6.10"
-libraryDependencies += "org.apache.spark" %% "spark-core" % "3.0.0"
-libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.0.0"
+libraryDependencies += "org.apache.spark" %% "spark-core" % "2.4.7"
+libraryDependencies += "org.apache.spark" %% "spark-sql" % "2.4.7"
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.0" % Test
+libraryDependencies += "com.lihaoyi" %% "ujson" % "1.5.0"
 
-scalaVersion in ThisBuild := "2.12.13"
+scalaVersion in ThisBuild := "2.11.12"
 enablePlugins(JavaAppPackaging)
+logBuffered in Test := false
 
+test in assembly := {}
+assemblyMergeStrategy in assembly := {   
+  case PathList("META-INF", xs @ _*) => MergeStrategy.discard   
+  case x => MergeStrategy.first 
+}
