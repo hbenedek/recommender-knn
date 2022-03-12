@@ -68,14 +68,14 @@ package object predictions
   }
 
   def distributedAllUserAverage(rdd: org.apache.spark.rdd.RDD[Rating]): org.apache.spark.rdd.RDD[(Int, Double)] = {
-    rdd.map{case Rating(x, y, z) => (x,(y,1))}
+    rdd.map{case Rating(u, i, r) => (u,(r,1))}
       .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
       .map{case (k,v)=> (k, v._1/v._2)}
   }
 
-  def scale(x: Double, userAvg: Double):Double = {
-    if (x > userAvg) {5 - userAvg}
-    else if (x < userAvg) {userAvg - 1}
+  def scale(rating: Double, userAvg: Double):Double = {
+    if (rating > userAvg) {5 - userAvg}
+    else if (rating < userAvg) {userAvg - 1}
     else 1
   }
 
@@ -100,12 +100,7 @@ package object predictions
     devs.reduce(_ + _) / devs.count()
   }
 
-  def distributedPrediction(rdd: org.apache.spark.rdd.RDD[Rating], user: Int, item: Int): Double = {
-    // i didn't manage to test this function since it uses distributedItemDeviation
-    //val userAvg = distributedUserAverage(rdd, user)
-    //val itemDev = distributedItemDeviation(rdd, item)
-    //val scaled = scale(userAvg + itemDev, userAvg)
-    //userAvg + itemDev * scaled
-    0
+  def globalAverageDeviation(userAvg: Double, itemDev: Double): Double = {
+    userAvg + itemDev * scale(userAvg + itemDev, userAvg)
   }
 }
