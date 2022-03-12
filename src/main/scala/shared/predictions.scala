@@ -44,6 +44,127 @@ package object predictions
                 case None => Rating(-1, -1, -1)})
   }
 
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //B.1
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  //Calculate global average
+  def globalAvg(ratings: Array[Rating]): Double = {
+    var total = 0.0
+    for (r<-ratings) {
+      total = total + r.rating
+    }
+    return total/ratings.size
+  }
+
+  //Calculate user average
+  def computeUserAvg(uid: Int, ratings: Array[Rating]): Double = {
+    val userRatings = ratings.filter(r => r.user == uid).map(r=>r.rating)
+    return mean(userRatings)
+  }
+  
+  //Calculate item average
+  def computeItemAvg(iid: Int, ratings: Array[Rating]): Double = {
+    var itemRatings = ratings.filter(r => r.item == iid).map(r=>r.rating)
+    return mean(itemRatings)
+  }
+
+  /* 
+  def scale(x: Double, userAvg: Double): Double = {
+    if (x > userAvg) {5 - userAvg}
+    else if (x < userAvg) {userAvg - 1}
+    else { 1 }
+  } */
+
+  //Calculate the average item deviation
+  //Takes as input a Map containing user IDs linked to their average rating
+  //this is done to speed up the item deviation calculation, as there is no need
+  //to recalculate the user averages at each loop. (See the evaluateBaseline function)
+  def averageItemDeviation(iid: Int, ratings: Array[Rating], userAverages: Map[Int,Double]): Double = { 
+    val itemRatings = ratings.filter(r => r.item == iid)
+    val userRatings = itemRatings.map(r=>(r.user, r.rating))
+    val devs = userRatings.map{case (uid, r)=>(r-userAverages(uid))/scale(r,userAverages(uid))}
+    return devs.sum/devs.size
+  }
+  
+  def predictRating(uid: Int, iid: Int, ratings: Array[Rating]): Double = {
+    val userAvg = (for (uid <- ratings.map(r=>r.user).distinct; 
+                     avgRating = computeUserAvg(uid, ratings)
+                    ) yield (uid, avgRating)).toMap
+    val meanDeviation = averageItemDeviation(iid, ratings, userAvg)
+    val norm = scale(userAvg(uid) + meanDeviation, userAvg(uid))
+    return userAvg(uid) + meanDeviation * norm
+  }
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //B.2
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  def MAE(pred: Array[Double], r: Array[Double]): Double = {
+    pred.zip(r).map{case (a,b) => (b-a).abs}.sum/r.size
+  }
+
+  //Calculate MAE when using global average to predict
+  def evaluateGlobal(train: Array[Rating], test: Array[Rating]): Double = {
+    val pred = globalAvg(train)
+    val preds = (1 to test.size).map(_ => pred).toArray
+    val target = test.map(r => r.rating).toArray
+    return MAE(preds, target)
+  }
+
+  //Calculate MAE when using the user's average to predict
+  def evaluateUserAverage(train: Array[Rating], test: Array[Rating]): Double = {
+    val uids = train.map(r=>r.user).distinct
+    val userAverages = (for (uid <- uids; 
+                     avgRating = computeUserAvg(uid, train)
+                    ) yield (uid, avgRating)).toMap
+    val preds = test.map(r => userAverages(r.user))
+    val target = test.map(r => r.rating)
+    return MAE(preds, target)
+  }
+
+  //Calculate MAE when using the item's average to predict
+  def evaluateItemAverage(train: Array[Rating], test: Array[Rating]): Double = {
+    val train_iids = train.map(r=>r.item).distinct
+    val itemAverages = (for (iid <- train_iids;
+                             avgRating = computeItemAvg(iid, train)
+                       ) yield (iid, avgRating)).toMap
+    val default = globalAvg(train)
+    val preds = test.map(r => itemAverages.get(r.item) getOrElse(default))
+    val target = test.map(r => r.rating)
+    return MAE(preds, target)
+  }
+
+  //Calculate MAE when using the baseline prediction formula
+  def evaluateBaseline(train: Array[Rating], test: Array[Rating]): Double = {
+    //Get the train user IDs and item IDs
+    val uids = train.map(r=>r.user).distinct
+    val iids = train.map(r=>r.item).distinct
+    //Calculate the user averages and save as a map
+    val userAverages = (for (uid <- uids; 
+                     avgRating = computeUserAvg(uid, train)
+                    ) yield (uid, avgRating)).toMap
+    //Calculate average item deviations using the User-Average map we just created
+    val itemDeviations = (for (iid <- iids;
+                    dev = averageItemDeviation(iid, train, userAverages)
+                    ) yield (iid, dev)).toMap
+    //If a user doesn't exist in the train set, default to using the global average
+    val default = globalAvg(train)
+    println(test.size)
+    //Iterate over the test rows and get the predicted ratings
+    val preds = for (row <- test;
+                    ru = userAverages.get(row.user) getOrElse(default);
+                    ri = itemDeviations.get(row.item) getOrElse(0.0);
+                    norm = scale(ru+ri, ru)
+                    ) yield (ru + ri * norm)
+    val target = test.map(r=>r.rating)
+    return MAE(preds, target)
+  }
+
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Part D
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   def distributedGlobalAverage(rdd: org.apache.spark.rdd.RDD[Rating]): Double = {
     rdd.map(x => x.rating).reduce(_ + _) / rdd.count()
   }
@@ -107,4 +228,5 @@ package object predictions
   def globalAverageDeviation(userAvg: Double, itemDev: Double): Double = {
     userAvg + itemDev * scale(userAvg + itemDev, userAvg)
   }
+
 }

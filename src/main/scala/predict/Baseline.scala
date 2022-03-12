@@ -40,12 +40,34 @@ object Baseline extends App {
   println("Loading test data from: " + conf.test()) 
   val test = load(spark, conf.test(), conf.separator()).collect()
 
-  val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    Thread.sleep(1000) // Do everything here from train and test
-    42        // Output answer as last value
+  //Time the different methods:
+  // Using global average
+  val measurements_global = (1 to conf.num_measurements()).map(x => timingInMs(() => {
+    val out = evaluateGlobal(train, test)// Do everything here from train and test
+    out     // Output answer as last value
   }))
-  val timings = measurements.map(t => t._2) // Retrieve the timing measurements
+  val timings_global = measurements_global.map(t => t._2) // Retrieve the timing measurements
+  
+  //Using user average
+  val measurements_user = (1 to conf.num_measurements()).map(x => timingInMs(() => {
+    val out = evaluateUserAverage(train, test)
+    out     
+  }))
+  val timings_user = measurements_user.map(t => t._2) 
 
+  //Using item average
+  val measurements_item = (1 to conf.num_measurements()).map(x => timingInMs(() => {
+    val out = evaluateItemAverage(train, test)
+    out 
+  }))
+  val timings_item = measurements_item.map(t => t._2)
+
+  //Using baseline prediction method
+  val measurements_baseline = (1 to conf.num_measurements()).map(x => timingInMs(() => {
+    val out = evaluateBaseline(train, test)
+    out
+  }))
+  val timings_baseline = measurements_baseline.map(t => t._2) 
   // Save answers as JSON
   def printToFile(content: String, 
                   location: String = "./answers.json") =
@@ -54,6 +76,13 @@ object Baseline extends App {
         f.write(content)
       } finally{ f.close }
   }
+
+  //Needed for predicting average item deviation for item 1 
+  //(not needed for timings)
+  val user_avgs = (for (uid <- train.map(r=>r.user).distinct; 
+                     avgRating = computeUserAvg(uid, train)
+                    ) yield (uid, avgRating)).toMap
+  
   conf.json.toOption match {
     case None => ; 
     case Some(jsonFile) => {
@@ -64,34 +93,34 @@ object Baseline extends App {
           "3.Measurements" -> ujson.Num(conf.num_measurements())
         ),
         "B.1" -> ujson.Obj(
-          "1.GlobalAvg" -> ujson.Num(0.0), // Datatype of answer: Double
-          "2.User1Avg" -> ujson.Num(0.0),  // Datatype of answer: Double
-          "3.Item1Avg" -> ujson.Num(0.0),   // Datatype of answer: Double
-          "4.Item1AvgDev" -> ujson.Num(0.0), // Datatype of answer: Double
-          "5.PredUser1Item1" -> ujson.Num(0.0) // Datatype of answer: Double
+          "1.GlobalAvg" -> ujson.Num(globalAvg(train)), // Datatype of answer: Double
+          "2.User1Avg" -> ujson.Num(computeUserAvg(1, train)),  // Datatype of answer: Double
+          "3.Item1Avg" -> ujson.Num(computeItemAvg(1, train)),   // Datatype of answer: Double
+          "4.Item1AvgDev" -> ujson.Num(averageItemDeviation(1,train, user_avgs)), // Datatype of answer: Double
+          "5.PredUser1Item1" -> ujson.Num(predictRating(1,1,train)) // Datatype of answer: Double
         ),
         "B.2" -> ujson.Obj(
-          "1.GlobalAvgMAE" -> ujson.Num(0.0), // Datatype of answer: Double
-          "2.UserAvgMAE" -> ujson.Num(0.0),  // Datatype of answer: Double
-          "3.ItemAvgMAE" -> ujson.Num(0.0),   // Datatype of answer: Double
-          "4.BaselineMAE" -> ujson.Num(0.0)   // Datatype of answer: Double
+          "1.GlobalAvgMAE" -> ujson.Num(evaluateGlobal(train, test)), // Datatype of answer: Double
+          "2.UserAvgMAE" -> ujson.Num(evaluateUserAverage(train, test)),  // Datatype of answer: Double
+          "3.ItemAvgMAE" -> ujson.Num(evaluateItemAverage(train, test)),   // Datatype of answer: Double
+          "4.BaselineMAE" -> ujson.Num(evaluateBaseline(train, test))   // Datatype of answer: Double
         ),
         "B.3" -> ujson.Obj(
           "1.GlobalAvg" -> ujson.Obj(
-            "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double
-            "stddev (ms)" -> ujson.Num(std(timings)) // Datatype of answer: Double
+            "average (ms)" -> ujson.Num(mean(timings_global)), // Datatype of answer: Double
+            "stddev (ms)" -> ujson.Num(std(timings_global)) // Datatype of answer: Double
           ),
           "2.UserAvg" -> ujson.Obj(
-            "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double
-            "stddev (ms)" -> ujson.Num(std(timings)) // Datatype of answer: Double
+            "average (ms)" -> ujson.Num(mean(timings_user)), // Datatype of answer: Double
+            "stddev (ms)" -> ujson.Num(std(timings_user)) // Datatype of answer: Double
           ),
           "3.ItemAvg" -> ujson.Obj(
-            "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double
-            "stddev (ms)" -> ujson.Num(std(timings)) // Datatype of answer: Double
+            "average (ms)" -> ujson.Num(mean(timings_item)), // Datatype of answer: Double
+            "stddev (ms)" -> ujson.Num(std(timings_item)) // Datatype of answer: Double
           ),
           "4.Baseline" -> ujson.Obj(
-            "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double
-            "stddev (ms)" -> ujson.Num(std(timings)) // Datatype of answer: Double
+            "average (ms)" -> ujson.Num(mean(timings_baseline)), // Datatype of answer: Double
+            "stddev (ms)" -> ujson.Num(std(timings_baseline)) // Datatype of answer: Double
           )
         )
       )
