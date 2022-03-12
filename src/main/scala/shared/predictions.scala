@@ -72,6 +72,10 @@ package object predictions
       .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
       .map{case (k,v)=> (k, v._1/v._2)}
   }
+  //TODO: do the same with item deviation
+  //then we can implement the predictor with the two 'lookup' table the MAE function would look like this:
+  //rddTest.map(case R(u,i,r)=> (allUserBroadcast(u), allItemBroadcast(i),r))
+  //    .map(|globalAverageDeviation(x,y) - r|).reduce(_ + _) / rddTest.count() 
 
   def scale(rating: Double, userAvg: Double):Double = {
     if (rating > userAvg) {5 - userAvg}
