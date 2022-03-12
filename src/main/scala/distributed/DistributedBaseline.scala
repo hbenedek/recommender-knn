@@ -51,7 +51,11 @@ object DistributedBaseline extends App {
   val globalAvg = distributedGlobalAverage(train)
   val avgUserOne = distributedUserAverage(train, 1)
   val avgItemOne = distributedItemAverage(train, 1)
-  val avgDevUseOne = distributedItemDeviation(train, 1)
+
+  val allUser = distributedAllUserAverage(train)
+  val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap)
+  val item1AvgDev = distributedItemDeviation(train,1,allUserBroadcast)
+  
   //val predUserOneItemOne = distributedPrediction(train, 1, 1)  
   //TODO: MAE
 
@@ -77,7 +81,7 @@ object DistributedBaseline extends App {
           "1.GlobalAvg" -> ujson.Num(globalAvg), // Datatype of answer: Double
           "2.User1Avg" -> ujson.Num(avgUserOne),  // Datatype of answer: Double
           "3.Item1Avg" -> ujson.Num(avgItemOne),   // Datatype of answer: Double
-          "4.Item1AvgDev" -> ujson.Num(0.0), // Datatype of answer: Double,
+          "4.Item1AvgDev" -> ujson.Num(item1AvgDev), // Datatype of answer: Double,
           "5.PredUser1Item1" -> ujson.Num(0.0), // Datatype of answer: Double
           "6.Mae" -> ujson.Num(0.0) // Datatype of answer: Double
         ),

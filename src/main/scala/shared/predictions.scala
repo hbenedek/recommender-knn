@@ -67,10 +67,20 @@ package object predictions
     pair._1 / pair._2
   }
 
+  def distributedAllUserAverage(rdd: org.apache.spark.rdd.RDD[Rating]): org.apache.spark.rdd.RDD[(Int, Double)] = {
+    rdd.map{case Rating(x, y, z) => (x,(y,1))}
+      .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
+      .map{case (k,v)=> (k, v._1/v._2)}
+  }
+
   def scale(x: Double, userAvg: Double):Double = {
-   if (x > userAvg) {5 - userAvg}
-   else if (x < userAvg) {userAvg - 1}
-   else 1
+    if (x > userAvg) {5 - userAvg}
+    else if (x < userAvg) {userAvg - 1}
+    else 1
+  }
+
+  def normalizedDeviation(x: Double, y: Double) = {
+    (x - y)/scale(x,y)
   }
 
   def distributedNormalizedDeviation(rdd: org.apache.spark.rdd.RDD[Rating], user: Int, item: Int): Double = {
@@ -79,19 +89,23 @@ package object predictions
     (rating - userAvg) / scale(rating, userAvg)
   }
 
-  def distributedItemDeviation(rdd: org.apache.spark.rdd.RDD[Rating], item: Int): Double = {
-    val users = rdd.filter(x => x.item == item).map(x => x.user).distinct.collect()
-    //users.map(u => distributedNormalizedDeviation(rdd, u, item)).reduce(_ + _) / users.count()
-    //TODO: fix this. it is really slow for the moment, i could not deal with nested RDDs... maybe broadcast variables?
-    val userAvgs = for (u <- users) yield distributedNormalizedDeviation(rdd, u, item)
-    userAvgs.reduce(_ + _) / userAvgs.size
+  def distributedItemDeviation(
+      rdd: org.apache.spark.rdd.RDD[Rating], 
+      item: Int,
+      userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double = {
+    val devs = rdd.filter(x => x.item == item)
+      .map{case Rating(u, i, r) => (r, userAvgMap.value.getOrElse(u,0.0))}
+      .map{case (r, avg) => normalizedDeviation(r, avg)}
+
+    devs.reduce(_ + _) / devs.count()
   }
 
   def distributedPrediction(rdd: org.apache.spark.rdd.RDD[Rating], user: Int, item: Int): Double = {
     // i didn't manage to test this function since it uses distributedItemDeviation
-    val userAvg = distributedUserAverage(rdd, user)
-    val itemDev = distributedItemDeviation(rdd, item)
-    val scaled = scale(userAvg + itemDev, userAvg)
-    userAvg + itemDev * scaled
+    //val userAvg = distributedUserAverage(rdd, user)
+    //val itemDev = distributedItemDeviation(rdd, item)
+    //val scaled = scale(userAvg + itemDev, userAvg)
+    //userAvg + itemDev * scaled
+    0
   }
 }
