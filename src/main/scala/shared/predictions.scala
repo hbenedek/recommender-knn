@@ -50,17 +50,23 @@ package object predictions
 
   //Calculate global average
   def globalAvg(ratings: Array[Rating]): Double = {
-    var total = 0.0
-    for (r<-ratings) {
-      total = total + r.rating
-    }
-    return total/ratings.size
+    mean(ratings.map(r=>r.rating))
   }
 
   //Calculate user average
   def computeUserAvg(uid: Int, ratings: Array[Rating]): Double = {
     val userRatings = ratings.filter(r => r.user == uid).map(r=>r.rating)
     return mean(userRatings)
+  }
+
+  def computeAllUserAverages(ratings: Array[Rating]): Map[Int, Double] = {
+    val x = ratings.groupBy(r=>r.user).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
+    x
+  }
+
+  def computeAllItemAverages(ratings: Array[Rating]): Map[Int, Double] = {
+    val x = ratings.groupBy(r=>r.item).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
+    x
   }
   
   //Calculate item average
@@ -76,21 +82,28 @@ package object predictions
     else { 1 }
   } */
 
-  //Calculate the average item deviation
-  //Takes as input a Map containing user IDs linked to their average rating
-  //this is done to speed up the item deviation calculation, as there is no need
-  //to recalculate the user averages at each loop. (See the evaluateBaseline function)
+  //Calculate the average item deviation for an item
   def averageItemDeviation(iid: Int, ratings: Array[Rating], userAverages: Map[Int,Double]): Double = { 
     val itemRatings = ratings.filter(r => r.item == iid)
     val userRatings = itemRatings.map(r=>(r.user, r.rating))
     val devs = userRatings.map{case (uid, r)=>(r-userAverages(uid))/scale(r,userAverages(uid))}
     return devs.sum/devs.size
   }
+
+  //Compute average item deviations of every item
+  def computeAllItemDeviations(ratings: Array[Rating], userAverages: Map[Int,Double]): Map[Int,Double] = {
+    //Use the global average if a user doesn't exist in the ratings
+    val averages = userAverages.withDefaultValue(globalAvg(ratings))
+    //Group by the items
+    val groupedItems = ratings.groupBy(r => r.item)
+    //Compute the average deviations
+    val devs = groupedItems.map{case (k, v)=>(k, mean(v.map(r=>(r.user, r.rating))
+                                                  .map{case (u,r)=>(r-averages(u))/scale(r, averages(u))}))}
+    devs                    
+  }
   
   def predictRating(uid: Int, iid: Int, ratings: Array[Rating]): Double = {
-    val userAvg = (for (uid <- ratings.map(r=>r.user).distinct; 
-                     avgRating = computeUserAvg(uid, ratings)
-                    ) yield (uid, avgRating)).toMap
+    val userAvg = computeAllUserAverages(ratings)
     val meanDeviation = averageItemDeviation(iid, ratings, userAvg)
     val norm = scale(userAvg(uid) + meanDeviation, userAvg(uid))
     return userAvg(uid) + meanDeviation * norm
@@ -99,7 +112,7 @@ package object predictions
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
   //B.2
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
-  def MAE(pred: Array[Double], r: Array[Double]): Double = {
+  def mae(pred: Array[Double], r: Array[Double]): Double = {
     pred.zip(r).map{case (a,b) => (b-a).abs}.sum/r.size
   }
 
@@ -108,45 +121,34 @@ package object predictions
     val pred = globalAvg(train)
     val preds = (1 to test.size).map(_ => pred).toArray
     val target = test.map(r => r.rating).toArray
-    return MAE(preds, target)
+    return mae(preds, target)
   }
 
   //Calculate MAE when using the user's average to predict
   def evaluateUserAverage(train: Array[Rating], test: Array[Rating]): Double = {
-    val uids = train.map(r=>r.user).distinct
-    val userAverages = (for (uid <- uids; 
-                     avgRating = computeUserAvg(uid, train)
-                    ) yield (uid, avgRating)).toMap
-    val preds = test.map(r => userAverages(r.user))
+    val userAverages = computeAllUserAverages(train)
+    val default = globalAvg(train)
+    val preds = test.map(r => userAverages.get(r.user) getOrElse(default))
     val target = test.map(r => r.rating)
-    return MAE(preds, target)
+    return mae(preds, target)
   }
 
   //Calculate MAE when using the item's average to predict
   def evaluateItemAverage(train: Array[Rating], test: Array[Rating]): Double = {
     val train_iids = train.map(r=>r.item).distinct
-    val itemAverages = (for (iid <- train_iids;
-                             avgRating = computeItemAvg(iid, train)
-                       ) yield (iid, avgRating)).toMap
+    val itemAverages = computeAllItemAverages(train)
     val default = globalAvg(train)
     val preds = test.map(r => itemAverages.get(r.item) getOrElse(default))
     val target = test.map(r => r.rating)
-    return MAE(preds, target)
+    return mae(preds, target)
   }
 
   //Calculate MAE when using the baseline prediction formula
-  def evaluateBaseline(train: Array[Rating], test: Array[Rating]): Double = {
-    //Get the train user IDs and item IDs
-    val uids = train.map(r=>r.user).distinct
-    val iids = train.map(r=>r.item).distinct
+  def evaluateBaseline(train: Array[Rating], test: Array[Rating]): Double = {    
     //Calculate the user averages and save as a map
-    val userAverages = (for (uid <- uids; 
-                     avgRating = computeUserAvg(uid, train)
-                    ) yield (uid, avgRating)).toMap
+    val userAverages = computeAllUserAverages(train)
     //Calculate average item deviations using the User-Average map we just created
-    val itemDeviations = (for (iid <- iids;
-                    dev = averageItemDeviation(iid, train, userAverages)
-                    ) yield (iid, dev)).toMap
+    val itemDeviations = computeAllItemDeviations(train, userAverages)
     //If a user doesn't exist in the train set, default to using the global average
     val default = globalAvg(train)
     println(test.size)
@@ -157,7 +159,7 @@ package object predictions
                     norm = scale(ru+ri, ru)
                     ) yield (ru + ri * norm)
     val target = test.map(r=>r.rating)
-    return MAE(preds, target)
+    return mae(preds, target)
   }
 
 
