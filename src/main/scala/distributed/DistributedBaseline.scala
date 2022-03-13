@@ -43,8 +43,7 @@ object DistributedBaseline extends App {
   val test = load(spark, conf.test(), conf.separator())
 
   val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    Thread.sleep(1) // Do everything here from train and test
-    42        // Output answer as last value
+    42
   }))
   val timings = measurements.map(t => t._2) // Retrieve the timing measurements
 
@@ -54,11 +53,13 @@ object DistributedBaseline extends App {
 
   val allUser = distributedAllUserAverage(train)
   val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap)
-  val item1AvgDev = distributedItemDeviation(train,1,allUserBroadcast)
+
+  val allItemDev = distributedAllItemDeviation(train, allUserBroadcast)
+  val allItemDevBroadcast = spark.sparkContext.broadcast(allItemDev.collect().toMap)
+
+  val item1AvgDev = allItemDevBroadcast.value.getOrElse(1,0.0)
   val predUser1Item1 = globalAverageDeviation(avgUserOne,item1AvgDev)
-  
-  //val predUserOneItemOne = distributedPrediction(train, 1, 1)  
-  //TODO: MAE
+  val mae = distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast)
 
   // Save answers as JSON
   def printToFile(content: String, 
@@ -84,7 +85,7 @@ object DistributedBaseline extends App {
           "3.Item1Avg" -> ujson.Num(avgItemOne),   // Datatype of answer: Double
           "4.Item1AvgDev" -> ujson.Num(item1AvgDev), // Datatype of answer: Double,
           "5.PredUser1Item1" -> ujson.Num(predUser1Item1), // Datatype of answer: Double
-          "6.Mae" -> ujson.Num(0.0) // Datatype of answer: Double
+          "6.Mae" -> ujson.Num(mae) // Datatype of answer: Double
         ),
         "D.2" -> ujson.Obj(
           "1.DistributedBaseline" -> ujson.Obj(
