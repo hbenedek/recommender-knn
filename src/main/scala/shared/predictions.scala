@@ -188,15 +188,16 @@ package object predictions
     pair._1 / pair._2
   }
 
-  def distributedAllUserAverage(rdd: org.apache.spark.rdd.RDD[Rating]): org.apache.spark.rdd.RDD[(Int, Double)] = {
-    rdd.map{case Rating(u, i, r) => (u,(r,1))}
-      .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
-      .map{case (k,v)=> (k, v._1/v._2)}
+  def distributedItemDeviation(
+    rdd: org.apache.spark.rdd.RDD[Rating], 
+    item: Int,
+    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double = {
+    val devs = rdd.filter(x => x.item == item)
+      .map{case Rating(u, i, r) => (r, userAvgMap.value.getOrElse(u,0.0))}
+      .map{case (r, avg) => normalizedDeviation(r, avg)}
+
+    devs.reduce(_ + _) / devs.count()
   }
-  //TODO: do the same with item deviation
-  //then we can implement the predictor with the two 'lookup' table the MAE function would look like this:
-  //rddTest.map(case R(u,i,r)=> (allUserBroadcast(u), allItemBroadcast(i),r))
-  //    .map(|globalAverageDeviation(x,y) - r|).reduce(_ + _) / rddTest.count() 
 
   def scale(rating: Double, userAvg: Double):Double = {
     if (rating > userAvg) {5 - userAvg}
@@ -208,25 +209,30 @@ package object predictions
     (x - y)/scale(x,y)
   }
 
-  def distributedNormalizedDeviation(rdd: org.apache.spark.rdd.RDD[Rating], user: Int, item: Int): Double = {
-    val userAvg = distributedUserAverage(rdd, user)
-    val rating = rdd.filter(x => x.user == user || x.item == item).take(1).head.rating
-    (rating - userAvg) / scale(rating, userAvg)
-  }
-
-  def distributedItemDeviation(
-      rdd: org.apache.spark.rdd.RDD[Rating], 
-      item: Int,
-      userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double = {
-    val devs = rdd.filter(x => x.item == item)
-      .map{case Rating(u, i, r) => (r, userAvgMap.value.getOrElse(u,0.0))}
-      .map{case (r, avg) => normalizedDeviation(r, avg)}
-
-    devs.reduce(_ + _) / devs.count()
-  }
-
   def globalAverageDeviation(userAvg: Double, itemDev: Double): Double = {
     userAvg + itemDev * scale(userAvg + itemDev, userAvg)
   }
 
+  def distributedAllUserAverage(rdd: org.apache.spark.rdd.RDD[Rating]): org.apache.spark.rdd.RDD[(Int, Double)] = {
+    rdd.map{case Rating(u, i, r) => (u,(r,1))}
+      .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
+      .map{case (k,v)=> (k, v._1/v._2)}
+  }
+
+  def distributedAllItemDeviation(
+    rdd: org.apache.spark.rdd.RDD[Rating],
+    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): org.apache.spark.rdd.RDD[(Int, Double)] = {
+    rdd.map{case Rating(u, i, r) => (i, (normalizedDeviation(r,userAvgMap.value.getOrElse(u,0.0)),1))}
+      .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
+      .map{case (k,v)=> (k, v._1/v._2)}
+  }
+  
+  def distributedBaselineMAE(
+    rddTest: org.apache.spark.rdd.RDD[Rating],
+    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
+    itemDevMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double ={
+    rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,0.0), itemDevMap.value.getOrElse(i,0.0), r)}
+          .map{case (avg, dev, r) => (globalAverageDeviation(avg,dev) - r).abs}
+          .reduce(_ + _) / rddTest.count() 
+  } 
 }
