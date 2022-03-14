@@ -41,6 +41,28 @@ object Personalized extends App {
   
   // Compute here
 
+  val globalAvgRating = globalAvg(train)
+  val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
+  val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
+
+  //Constant one similarity
+  val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, allOnesSimilarity, 1, 1)
+  val predUser1Item1 = predict(userAverages(1), devUser1Item1)
+  val onesMae = similarityMae(train, test, allOnesSimilarity)
+
+  //Jaccard
+  val jaccardUser1User2 = jaccardIndexSimilarity(train, 1, 2)
+  val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, jaccardIndexSimilarity, 1, 1)
+  val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
+  //TODO: mae does not work with nontrivial similarity
+  //val jaccardMae = similarityMae(train, test, jaccardIndexSimilarity)
+
+  //Cosine
+  val processed = preprocessRatings(train, userAverages)
+  val adjustedCosineUser1User2 = cosineSimilarity(processed, 1, 2)
+  val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, cosineSimilarity, 1, 1)
+  val cosPredUser1Item1 = predict(userAverages(1), cosineDevUser1Item1)
+
   // Save answers as JSON
   def printToFile(content: String, 
                   location: String = "./answers.json") =
@@ -59,17 +81,17 @@ object Personalized extends App {
           "3.Measurements" -> ujson.Num(conf.num_measurements())
         ),
         "P.1" -> ujson.Obj(
-          "1.PredUser1Item1" -> ujson.Num(0.0), // Prediction of item 1 for user 1 (similarity 1 between users)
-          "2.OnesMAE" -> ujson.Num(0.0)         // MAE when using similarities of 1 between all users
+          "1.PredUser1Item1" -> ujson.Num(predUser1Item1), // Prediction of item 1 for user 1 (similarity 1 between users)
+          "2.OnesMAE" -> ujson.Num(onesMae)         // MAE when using similarities of 1 between all users
         ),
         "P.2" -> ujson.Obj(
-          "1.AdjustedCosineUser1User2" -> ujson.Num(0.0), // Similarity between user 1 and user 2 (adjusted Cosine)
-          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (adjusted cosine)
+          "1.AdjustedCosineUser1User2" -> ujson.Num(adjustedCosineUser1User2), // Similarity between user 1 and user 2 (adjusted Cosine)
+          "2.PredUser1Item1" -> ujson.Num(cosPredUser1Item1),  // Prediction item 1 for user 1 (adjusted cosine)
           "3.AdjustedCosineMAE" -> ujson.Num(0.0) // MAE when using adjusted cosine similarity
         ),
         "P.3" -> ujson.Obj(
-          "1.JaccardUser1User2" -> ujson.Num(0.0), // Similarity between user 1 and user 2 (jaccard similarity)
-          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (jaccard)
+          "1.JaccardUser1User2" -> ujson.Num(jaccardUser1User2), // Similarity between user 1 and user 2 (jaccard similarity)
+          "2.PredUser1Item1" -> ujson.Num(jaccardPredUser1Item1),  // Prediction item 1 for user 1 (jaccard)
           "3.JaccardPersonalizedMAE" -> ujson.Num(0.0) // MAE when using jaccard similarity
         )
       )

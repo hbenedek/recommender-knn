@@ -52,14 +52,14 @@ object DistributedBaseline extends App {
   val avgItemOne = distributedItemAverage(train, 1)
 
   val allUser = distributedAllUserAverage(train)
-  val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap)
+  val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap.withDefaultValue(globalAvg))
 
-  val allItemDev = distributedAllItemDeviation(train, allUserBroadcast)
+  val allItemDev = distributedAllItemDeviation(train, allUserBroadcast, globalAvg)
   val allItemDevBroadcast = spark.sparkContext.broadcast(allItemDev.collect().toMap)
 
-  val item1AvgDev = allItemDevBroadcast.value.getOrElse(1,0.0)
-  val predUser1Item1 = globalAverageDeviation(avgUserOne,item1AvgDev)
-  val mae = distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast)
+  val item1AvgDev = allItemDevBroadcast.value.getOrElse(1,globalAvg)
+  val predUser1Item1 = predict(avgUserOne,item1AvgDev)
+  val mae = distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast, globalAvg)
 
   // Save answers as JSON
   def printToFile(content: String, 

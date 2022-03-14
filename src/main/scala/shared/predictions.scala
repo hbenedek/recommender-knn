@@ -60,8 +60,8 @@ package object predictions
   }
 
   def computeAllUserAverages(ratings: Array[Rating]): Map[Int, Double] = {
-    val x = ratings.groupBy(r=>r.user).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
-    x
+    ratings.groupBy(r=>r.user).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
+    
   }
 
   def computeAllItemAverages(ratings: Array[Rating]): Map[Int, Double] = {
@@ -211,7 +211,7 @@ package object predictions
     (x - y)/scale(x,y)
   }
 
-  def globalAverageDeviation(userAvg: Double, itemDev: Double): Double = {
+  def predict(userAvg: Double, itemDev: Double): Double = {
     userAvg + itemDev * scale(userAvg + itemDev, userAvg)
   }
 
@@ -223,8 +223,9 @@ package object predictions
 
   def distributedAllItemDeviation(
     rdd: org.apache.spark.rdd.RDD[Rating],
-    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): org.apache.spark.rdd.RDD[(Int, Double)] = {
-    rdd.map{case Rating(u, i, r) => (i, (normalizedDeviation(r,userAvgMap.value.getOrElse(u,0.0)),1))}
+    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
+    default: Double): org.apache.spark.rdd.RDD[(Int, Double)] = {
+    rdd.map{case Rating(u, i, r) => (i, (normalizedDeviation(r,userAvgMap.value.getOrElse(u,default)),1))}
       .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
       .map{case (k,v)=> (k, v._1/v._2)}
   }
@@ -232,9 +233,73 @@ package object predictions
   def distributedBaselineMAE(
     rddTest: org.apache.spark.rdd.RDD[Rating],
     userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
-    itemDevMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double ={
-    rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,0.0), itemDevMap.value.getOrElse(i,0.0), r)}
-          .map{case (avg, dev, r) => (globalAverageDeviation(avg,dev) - r).abs}
+    itemDevMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
+    default: Double): Double ={
+    rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,default), itemDevMap.value.getOrElse(i,0.0), r)}
+          .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
           .reduce(_ + _) / rddTest.count() 
   } 
+
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Part P
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  def computeAllNormalizedDevs(ratings: Array[Rating], userAverages: Map[Int,Double]): Array[Rating] = {
+    ratings.map(r => Rating(r.user, r.item, normalizedDeviation(r.rating, userAverages(r.user))))
+  }
+
+  def preprocessRatings(ratings: Array[Rating], userAverages: Map[Int,Double]): Array[Rating] = {
+    val devs = computeAllNormalizedDevs(ratings, userAverages)
+    val denominators = devs.map(r => (r.user, r.rating * r.rating))
+      .groupBy(_._1).mapValues( _.map(_._2).sum ).toList
+      .map{case (u,v) => (u, scala.math.sqrt(v))}
+      .toMap
+    devs.map(r => Rating(r.user, r.item, r.rating/denominators(r.user)))
+  }
+
+   def cosineSimilarity(preprocessedRatings: Array[Rating], u: Int, v: Int): Double = {
+    preprocessedRatings.filter(r => r.user == u || r.user == v)
+      .map(r => (r.item,r.rating))
+      .groupBy(_._1)
+      .filter(x => x._2.size == 2)
+      .mapValues(_.map(_._2).reduce(_ * _))
+      .map(_._2)
+      .reduce(_ + _)
+  }
+
+  def weightedAllItemDevForOneUser(normalizedRatings: Array[Rating], similarity: (Array[Rating], Int, Int) => Double, user: Int, item: Int): Double = {
+    val weightedTuple = normalizedRatings.filter(r => r.item == item)
+      .map(r => (r.rating, similarity(normalizedRatings, r.user, user)))
+      .reduceOption((acc,elem) => (acc._1 + elem._1 * elem._2, acc._2 + elem._2)).getOrElse((0.0,1.0))
+    weightedTuple._1 / weightedTuple._2
+  }
+
+  def allOnesSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
+    1.0
+  }
+
+  //For the moment I don't use this function. I was experimenting how to store similarity coeffs between users...
+  def jaccardIndexSimilarityMap(ratings: Array[Rating], u: Int): Map[Int, Double] = {
+    val uItems = ratings.filter(r => r.user == u).map(r => r.item)
+    ratings.map(r => (r.user, r.item))
+      .groupBy(_._1)
+      .map{case (u, items) => (u, items.intersect(uItems).size.toDouble / items.union(uItems).size.toDouble)}
+      .toMap
+  }
+
+  def jaccardIndexSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
+    val uRatings = ratings.filter(r => r.user == u).map(r => r.item)
+    val vRatings = ratings.filter(r => r.user == v).map(r => r.item)
+    uRatings.intersect(vRatings).size.toDouble / uRatings.union(vRatings).size.toDouble
+  }
+
+  def similarityMae(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Int, Int) => Double): Double = {
+    val global = globalAvg(train)
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
+    test.map(r => (userAverages(r.user), weightedAllItemDevForOneUser(normalizedRatings, similarity, r.user, r.item), r.rating))
+      .map{case (avg, dev, r) => (predict(avg, dev) - r).abs}
+      .reduce(_ + _) / test.size
+  }
 }
