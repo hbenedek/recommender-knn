@@ -39,28 +39,29 @@ object Personalized extends App {
   println("Loading test data from: " + conf.test()) 
   val test = load(spark, conf.test(), conf.separator()).collect()
   
-  // Compute here
+  println("Number of users: " + train.map(r=>r.user).distinct.size)
 
   val globalAvgRating = globalAvg(train)
   val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
   val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
 
-  //Constant one similarity
-  val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, allOnesSimilarity, 1, 1)
+  println("Calculating results with similarity constant one")
+  def oneSim(r: Array[Rating], u: Int, v: Int): Double = 1
+  val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, oneSim)
   val predUser1Item1 = predict(userAverages(1), devUser1Item1)
-  val onesMae = similarityMae(train, test, allOnesSimilarity)
+  val onesMae = similarityMae(train, test, oneSim)
 
-  //Jaccard
+  println("Calculating results with Jaccard similarity")
   val jaccardUser1User2 = jaccardIndexSimilarity(train, 1, 2)
-  val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, jaccardIndexSimilarity, 1, 1)
+  val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, jaccardIndexSimilarity)
   val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
   //TODO: mae does not work with nontrivial similarity
   //val jaccardMae = similarityMae(train, test, jaccardIndexSimilarity)
 
-  //Cosine
+  println("Calculating results with Cosine similarity")
   val processed = preprocessRatings(train, userAverages)
   val adjustedCosineUser1User2 = cosineSimilarity(processed, 1, 2)
-  val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, cosineSimilarity, 1, 1)
+  val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, cosineSimilarity)
   val cosPredUser1Item1 = predict(userAverages(1), cosineDevUser1Item1)
 
   // Save answers as JSON

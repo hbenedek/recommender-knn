@@ -268,24 +268,18 @@ package object predictions
       .reduce(_ + _)
   }
 
-  def weightedAllItemDevForOneUser(normalizedRatings: Array[Rating], similarity: (Array[Rating], Int, Int) => Double, user: Int, item: Int): Double = {
+  def weightedAllItemDevForOneUser(normalizedRatings: Array[Rating], user: Int, item: Int, similarity: (Array[Rating], Int, Int) => Double): Double = {
     val weightedTuple = normalizedRatings.filter(r => r.item == item)
       .map(r => (r.rating, similarity(normalizedRatings, r.user, user)))
       .reduceOption((acc,elem) => (acc._1 + elem._1 * elem._2, acc._2 + elem._2)).getOrElse((0.0,1.0))
     weightedTuple._1 / weightedTuple._2
   }
 
-  def allOnesSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
-    1.0
-  }
-
   //For the moment I don't use this function. I was experimenting how to store similarity coeffs between users...
-  def jaccardIndexSimilarityMap(ratings: Array[Rating], u: Int): Map[Int, Double] = {
-    val uItems = ratings.filter(r => r.user == u).map(r => r.item)
-    ratings.map(r => (r.user, r.item))
-      .groupBy(_._1)
-      .map{case (u, items) => (u, items.intersect(uItems).size.toDouble / items.union(uItems).size.toDouble)}
-      .toMap
+  def similarityMapper(ratings: Array[Rating], similarity: (Array[Rating], Int, Int) => Double): Map[(Int, Int), Double] = {
+    val users = ratings.map(r => (r.user)).distinct
+    val mapped = for {u1 <- users; u2 <- users} yield ((u1, u2), similarity(ratings, u1, u2))
+    mapped.toMap
   }
 
   def jaccardIndexSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
@@ -298,7 +292,7 @@ package object predictions
     val global = globalAvg(train)
     val userAverages = computeAllUserAverages(train).withDefaultValue(global)
     val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
-    test.map(r => (userAverages(r.user), weightedAllItemDevForOneUser(normalizedRatings, similarity, r.user, r.item), r.rating))
+    test.map(r => (userAverages(r.user), weightedAllItemDevForOneUser(normalizedRatings, r.user, r.item, similarity), r.rating))
       .map{case (avg, dev, r) => (predict(avg, dev) - r).abs}
       .reduce(_ + _) / test.size
   }
