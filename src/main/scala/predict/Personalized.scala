@@ -57,6 +57,7 @@ object Personalized extends App {
   val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
   //TODO: mae does not work with nontrivial similarity
   //val jaccardMae = similarityMae(train, test, jaccardIndexSimilarity)
+  val jaccardMae = evaluateJaccardSimilarity(train,test)
 
   println("Calculating results with Cosine similarity")
   val processed = preprocessRatings(train, userAverages)
@@ -93,7 +94,7 @@ object Personalized extends App {
         "P.3" -> ujson.Obj(
           "1.JaccardUser1User2" -> ujson.Num(jaccardUser1User2), // Similarity between user 1 and user 2 (jaccard similarity)
           "2.PredUser1Item1" -> ujson.Num(jaccardPredUser1Item1),  // Prediction item 1 for user 1 (jaccard)
-          "3.JaccardPersonalizedMAE" -> ujson.Num(0.0) // MAE when using jaccard similarity
+          "3.JaccardPersonalizedMAE" -> ujson.Num(jaccardMae) // MAE when using jaccard similarity
         )
       )
       val json = write(answers, 4)

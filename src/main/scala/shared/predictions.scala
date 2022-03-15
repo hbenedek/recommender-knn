@@ -296,4 +296,62 @@ package object predictions
       .map{case (avg, dev, r) => (predict(avg, dev) - r).abs}
       .reduce(_ + _) / test.size
   }
+
+  /*
+  Jaccard similarity test
+  */
+
+  //Compute all Jaccard similarities between users
+  //TODO: probably nicer way of doing this without a for loop, and maybe having 
+  //the user pair (u,v) as a key would be better,
+  def allJaccardSimilarities(ratings: Array[Rating]): Map[Int, Map[Int, Double]] = {
+    val userRatings = ratings.groupBy(r=>r.user)
+    val uids = ratings.map(r=>r.user).distinct.toSet
+    val similarityMap = for (uid <- uids; 
+      //Iterate over users
+      current = userRatings(uid).map(r=>r.item).toSet;
+      //Get items the other users have rated, compute Jaccard
+      others = (uids - uid).map(u => (u,userRatings(u).map(r=>r.item).toSet))
+                               .map(r=>(r._1,r._2.intersect(current).size.toDouble/r._2.union(current).size.toDouble))
+                               .toMap//.intersect(current))
+    ) yield (uid, others)
+    similarityMap.toMap
+  }
+
+  //Same function as computeAllItemDeviations (Part B.1), but doesn't average over items.
+  def userItemDeviation(ratings: Array[Rating], userAverages: Map[Int,Double]): Map[Int,Map[Int,Double]] = {
+    //Use the global average if a user doesn't exist in the ratings
+    val averages = userAverages.withDefaultValue(globalAvg(ratings))
+    //Group by the items
+    val groupedItems = ratings.groupBy(r => r.item)
+    //Compute the average deviations
+    val devs = groupedItems.map{case (k, v)=>(k, v.map(r=>(r.user, r.rating))
+                                                  .map{case (u,r)=>(u,(r-averages(u))/scale(r, averages(u)))}.toMap)}
+    devs 
+  }                  
+
+  //Evaluate MAE when using Jaccard Similarity. 
+  //TODO: Again, maybe getting rid of for loop could be nice
+  def evaluateJaccardSimilarity(train: Array[Rating], test: Array[Rating]): Double = {
+    val global = globalAvg(train)
+    println("Computing user averages...")
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    println("Computing User-Item Devations...")
+    val itemDevs = userItemDeviation(train, userAverages)//computeAllItemDeviations(train, userAverages)
+    println("Computing Jaccard Similarities...")
+    val sims = allJaccardSimilarities(train)
+    println("Predicting...")
+    //val vs = train.groupBy(r=>r.item).map{case (k,v)=>(k, v.map(r=>r.user))}
+    val preds = for (row <- test;
+                 vs = train.filter(r=>r.item==row.item).map(r=>r.user);
+                 u = row.user; 
+                 uv_sum = vs.map(v=>sims(u)(v)).sum;
+                 ri = if (uv_sum!=0) vs.map(v=>sims(u)(v) * itemDevs(row.item)(v)).sum/uv_sum else 0.0;
+                 ru = userAverages(u);
+                 norm = scale(ru+ri,ru)
+                 ) yield(ru + ri * norm)
+    val target = test.map(r=>r.rating)
+    mae(preds, target)
+  }
+
 }
