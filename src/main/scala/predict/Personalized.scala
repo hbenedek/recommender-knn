@@ -48,31 +48,24 @@ object Personalized extends App {
 
   println("Calculating results with similarity constant one")
   def oneSim(u: Array[Rating], v: Array[Rating]): Double = 1
+  val oneMap = similarityMapper(train, oneSim)
+  val onePredUser1Item1 = predict(Rating(1, 1, 0.0), train, oneMap, userItemDevs, userAverages) 
   val onesMae = evaluateSimilarity(train, test, oneSim)
-  //val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, oneSim)
-  //val predUser1Item1 = predict(userAverages(1), devUser1Item1)
-  //val onesMae = similarityMae(train, test, oneSim)
+ 
 
-  //println("Calculating results with Jaccard similarity")
+  println("Calculating results with Jaccard similarity")
   val u1 = train.filter(r => r.user == 1)
   val u2 = train.filter(r => r.user == 2)
   val jaccardUser1User2 = jaccardIndexSimilarity(u1, u2)
+  val jaccardMap = similarityMapper(train, jaccardIndexSimilarity)
+  val jaccardPredUser1Item1 = predict(Rating(1, 1, 0.0), train, jaccardMap, userItemDevs, userAverages) 
   val jaccardMae = evaluateSimilarity(train, test, jaccardIndexSimilarity)
-  //val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, jaccardIndexSimilarity)
-  //val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
-  //TODO: mae does not work with nontrivial similarity
-  //val jaccardMae = similarityMae(train, test, jaccardIndexSimilarity)
-  //val jaccardMae = evaluateJaccardSimilarity(train,test)
 
   println("Calculating results with Cosine similarity")
-  val processedTrain = preprocessRatings(train, userAverages)
-  val processedTest = preprocessRatings(train, userAverages)
-  val v1 = processedTrain.filter(r => r.user == 1)
-  val v2 = processedTrain.filter(r => r.user == 2)
-  val adjustedCosineUser1User2 = cosineSimilarity(v1, v2)
-  val cosineMae = evaluateSimilarity(processedTrain, processedTest, cosineSimilarity)
-  //val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, cosineSimilarity)
-  //val cosPredUser1Item1 = predict(userAverages(1), cosineDevUser1Item1)
+  val cosineMap = similarityMapper(train, cosineSimilarity)
+  val adjustedCosineUser1User2 = cosineMap(1)(2)
+  val cosinePredUser1Item1 = predict(Rating(1, 1, 0.0), train, cosineMap, userItemDevs, userAverages) 
+  val cosineMae = evaluateSimilarity(train, test, cosineSimilarity)
 
   // Save answers as JSON
   def printToFile(content: String, 
@@ -92,17 +85,17 @@ object Personalized extends App {
           "3.Measurements" -> ujson.Num(conf.num_measurements())
         ),
         "P.1" -> ujson.Obj(
-          "1.PredUser1Item1" -> ujson.Num(0.0), // Prediction of item 1 for user 1 (similarity 1 between users)
+          "1.PredUser1Item1" -> ujson.Num(onePredUser1Item1), // Prediction of item 1 for user 1 (similarity 1 between users)
           "2.OnesMAE" -> ujson.Num(onesMae)         // MAE when using similarities of 1 between all users
         ),
         "P.2" -> ujson.Obj(
           "1.AdjustedCosineUser1User2" -> ujson.Num(adjustedCosineUser1User2), // Similarity between user 1 and user 2 (adjusted Cosine)
-          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (adjusted cosine)
+          "2.PredUser1Item1" -> ujson.Num(cosinePredUser1Item1),  // Prediction item 1 for user 1 (adjusted cosine)
           "3.AdjustedCosineMAE" -> ujson.Num(cosineMae) // MAE when using adjusted cosine similarity
         ),
         "P.3" -> ujson.Obj(
           "1.JaccardUser1User2" -> ujson.Num(jaccardUser1User2), // Similarity between user 1 and user 2 (jaccard similarity)
-          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (jaccard)
+          "2.PredUser1Item1" -> ujson.Num(jaccardPredUser1Item1),  // Prediction item 1 for user 1 (jaccard)
           "3.JaccardPersonalizedMAE" -> ujson.Num(jaccardMae) // MAE when using jaccard similarity
         )
       )
