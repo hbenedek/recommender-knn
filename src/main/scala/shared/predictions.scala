@@ -280,10 +280,12 @@ package object predictions
     uSet.intersect(vSet).size.toDouble / uSet.union(vSet).size.toDouble
   }
 
+  def oneSimilarity(u: Array[Rating], v: Array[Rating]): Double = 1
+
   def similarityMapper(ratings: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Map[Int, Map[Int, Double]] = {
     val averages = computeAllUserAverages(ratings).withDefaultValue(globalAvg(ratings))
     val processed = preprocessRatings(ratings, averages)
-    val users = processed.map(r => (r.user)).distinct
+    val users = processed.map(r => r.user).distinct
     val userRatings = ratings.groupBy(r => r.user)
     val mapped = for {u1 <- users;
       sims = users.map(v => (v, similarity(userRatings(u1), userRatings(v)))).toMap
@@ -318,7 +320,7 @@ package object predictions
     println("Computing  Similarities...")
     val sims = similarityMapper(train, similarity)
     println("Predicting...")
-    val preds = for (row <- test) yield predict(row, train, sims, itemDevs, userAverages)
+    val preds = test.map(row => predict(row, train, sims, itemDevs, userAverages))
     val target = test.map(r => r.rating)
     mae(preds, target)
   }

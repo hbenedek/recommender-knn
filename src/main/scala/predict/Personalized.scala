@@ -47,10 +47,9 @@ object Personalized extends App {
   val userItemDevs = userItemDeviation(train, userAverages)
 
   println("Calculating results with similarity constant one")
-  def oneSim(u: Array[Rating], v: Array[Rating]): Double = 1
-  val oneMap = similarityMapper(train, oneSim)
+  val oneMap = similarityMapper(train, oneSimilarity)
   val onePredUser1Item1 = predict(Rating(1, 1, 0.0), train, oneMap, userItemDevs, userAverages) 
-  val onesMae = evaluateSimilarity(train, test, oneSim)
+  val onesMae = evaluateSimilarity(train, test, oneSimilarity)
  
 
   println("Calculating results with Jaccard similarity")
