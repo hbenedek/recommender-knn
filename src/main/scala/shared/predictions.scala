@@ -286,7 +286,7 @@ package object predictions
     val averages = computeAllUserAverages(ratings).withDefaultValue(globalAvg(ratings))
     val processed = preprocessRatings(ratings, averages)
     val users = processed.map(r => r.user).distinct
-    val userRatings = ratings.groupBy(r => r.user)
+    val userRatings = processed.groupBy(r => r.user)
     val mapped = for {u1 <- users;
       sims = users.map(v => (v, similarity(userRatings(u1), userRatings(v)))).toMap
     } yield (u1, sims)
