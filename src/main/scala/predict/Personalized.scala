@@ -44,26 +44,35 @@ object Personalized extends App {
   val globalAvgRating = globalAvg(train)
   val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
   val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
+  val userItemDevs = userItemDeviation(train, userAverages)
 
   println("Calculating results with similarity constant one")
-  def oneSim(r: Array[Rating], u: Int, v: Int): Double = 1
-  val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, oneSim)
-  val predUser1Item1 = predict(userAverages(1), devUser1Item1)
-  val onesMae = similarityMae(train, test, oneSim)
+  def oneSim(u: Array[Rating], v: Array[Rating]): Double = 1
+  val onesMae = evaluateSimilarity(train, test, oneSim)
+  //val devUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, oneSim)
+  //val predUser1Item1 = predict(userAverages(1), devUser1Item1)
+  //val onesMae = similarityMae(train, test, oneSim)
 
-  println("Calculating results with Jaccard similarity")
-  val jaccardUser1User2 = jaccardIndexSimilarity(train, 1, 2)
-  val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, jaccardIndexSimilarity)
-  val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
+  //println("Calculating results with Jaccard similarity")
+  val u1 = train.filter(r => r.user == 1)
+  val u2 = train.filter(r => r.user == 2)
+  val jaccardUser1User2 = jaccardIndexSimilarity(u1, u2)
+  val jaccardMae = evaluateSimilarity(train, test, jaccardIndexSimilarity)
+  //val jaccardDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, jaccardIndexSimilarity)
+  //val jaccardPredUser1Item1 = predict(userAverages(1), jaccardDevUser1Item1)
   //TODO: mae does not work with nontrivial similarity
   //val jaccardMae = similarityMae(train, test, jaccardIndexSimilarity)
-  val jaccardMae = evaluateJaccardSimilarity(train,test)
+  //val jaccardMae = evaluateJaccardSimilarity(train,test)
 
   println("Calculating results with Cosine similarity")
-  val processed = preprocessRatings(train, userAverages)
-  val adjustedCosineUser1User2 = cosineSimilarity(processed, 1, 2)
-  val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, cosineSimilarity)
-  val cosPredUser1Item1 = predict(userAverages(1), cosineDevUser1Item1)
+  val processedTrain = preprocessRatings(train, userAverages)
+  val processedTest = preprocessRatings(train, userAverages)
+  val v1 = processedTrain.filter(r => r.user == 1)
+  val v2 = processedTrain.filter(r => r.user == 2)
+  val adjustedCosineUser1User2 = cosineSimilarity(v1, v2)
+  val cosineMae = evaluateSimilarity(processedTrain, processedTest, cosineSimilarity)
+  //val cosineDevUser1Item1 = weightedAllItemDevForOneUser(normalizedRatings, 1, 1, cosineSimilarity)
+  //val cosPredUser1Item1 = predict(userAverages(1), cosineDevUser1Item1)
 
   // Save answers as JSON
   def printToFile(content: String, 
@@ -83,17 +92,17 @@ object Personalized extends App {
           "3.Measurements" -> ujson.Num(conf.num_measurements())
         ),
         "P.1" -> ujson.Obj(
-          "1.PredUser1Item1" -> ujson.Num(predUser1Item1), // Prediction of item 1 for user 1 (similarity 1 between users)
+          "1.PredUser1Item1" -> ujson.Num(0.0), // Prediction of item 1 for user 1 (similarity 1 between users)
           "2.OnesMAE" -> ujson.Num(onesMae)         // MAE when using similarities of 1 between all users
         ),
         "P.2" -> ujson.Obj(
           "1.AdjustedCosineUser1User2" -> ujson.Num(adjustedCosineUser1User2), // Similarity between user 1 and user 2 (adjusted Cosine)
-          "2.PredUser1Item1" -> ujson.Num(cosPredUser1Item1),  // Prediction item 1 for user 1 (adjusted cosine)
-          "3.AdjustedCosineMAE" -> ujson.Num(0.0) // MAE when using adjusted cosine similarity
+          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (adjusted cosine)
+          "3.AdjustedCosineMAE" -> ujson.Num(cosineMae) // MAE when using adjusted cosine similarity
         ),
         "P.3" -> ujson.Obj(
           "1.JaccardUser1User2" -> ujson.Num(jaccardUser1User2), // Similarity between user 1 and user 2 (jaccard similarity)
-          "2.PredUser1Item1" -> ujson.Num(jaccardPredUser1Item1),  // Prediction item 1 for user 1 (jaccard)
+          "2.PredUser1Item1" -> ujson.Num(0.0),  // Prediction item 1 for user 1 (jaccard)
           "3.JaccardPersonalizedMAE" -> ujson.Num(jaccardMae) // MAE when using jaccard similarity
         )
       )
