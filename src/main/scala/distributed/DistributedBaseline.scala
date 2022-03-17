@@ -37,15 +37,22 @@ object DistributedBaseline extends App {
   println("")
   println("******************************************************")
 
+  // sbt "runMain distributed.DistributedBaseline --train data/ml-25m/r2.train --test data/ml-25m/r2.test  --separator , --json distributed-25m-4.json --master local[4]" --num_measurements 3
   println("Loading training data from: " + conf.train()) 
   val train = load(spark, conf.train(), conf.separator())
   println("Loading test data from: " + conf.test()) 
   val test = load(spark, conf.test(), conf.separator())
 
   val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    42
+    val allUser = distributedAllUserAverage(train)
+    val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap.withDefaultValue(globalAvg))
+
+    val allItemDev = distributedAllItemDeviation(train, allUserBroadcast, globalAvg)
+    val allItemDevBroadcast = spark.sparkContext.broadcast(allItemDev.collect().toMap)
+    distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast, globalAvg)
   }))
-  val timings = measurements.map(t => t._2) // Retrieve the timing measurements
+  val timings = measurements.map(t => t._2)
+  val mae = mean(measurements.map(t => t._1))
 
   val globalAvg = distributedGlobalAverage(train)
   val avgUserOne = distributedUserAverage(train, 1)
@@ -59,7 +66,9 @@ object DistributedBaseline extends App {
 
   val item1AvgDev = allItemDevBroadcast.value.getOrElse(1,globalAvg)
   val predUser1Item1 = predict(avgUserOne,item1AvgDev)
-  val mae = distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast, globalAvg)
+  //val mae = distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast, globalAvg)
+
+
 
   // Save answers as JSON
   def printToFile(content: String, 

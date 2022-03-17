@@ -258,48 +258,81 @@ package object predictions
     devs.map(r => Rating(r.user, r.item, r.rating/denominators(r.user)))
   }
 
-   def cosineSimilarity(preprocessedRatings: Array[Rating], u: Int, v: Int): Double = {
-    preprocessedRatings.filter(r => r.user == u || r.user == v)
-      .map(r => (r.item,r.rating))
-      .groupBy(_._1)
-      .filter(x => x._2.size == 2)
-      .mapValues(_.map(_._2).reduce(_ * _))
-      .map(_._2)
-      .reduce(_ + _)
+  def userItemDeviation(ratings: Array[Rating], userAverages: Map[Int,Double]): Map[Int,Map[Int,Double]] = {
+    val averages = userAverages.withDefaultValue(globalAvg(ratings))
+    val groupedItems = ratings.groupBy(r => r.item)
+    groupedItems.map{case (k, v) => (k, v.map(r=>(r.user, r.rating))
+                                        .map{case (u,r) => (u, (r - averages(u)) / scale(r, averages(u)))}.toMap)}
+  }  
+
+  def cosineSimilarity(u: Array[Rating], v: Array[Rating]): Double = {
+    (u ++ v).map(r => (r.item,r.rating))
+            .groupBy(_._1)
+            .filter(x => x._2.size == 2)
+            .mapValues(_.map(_._2).reduce(_ * _))
+            .map(_._2)
+            .reduceOption(_ + _).getOrElse((0.0))
   }
 
-  def weightedAllItemDevForOneUser(normalizedRatings: Array[Rating], similarity: (Array[Rating], Int, Int) => Double, user: Int, item: Int): Double = {
-    val weightedTuple = normalizedRatings.filter(r => r.item == item)
-      .map(r => (r.rating, similarity(normalizedRatings, r.user, user)))
-      .reduceOption((acc,elem) => (acc._1 + elem._1 * elem._2, acc._2 + elem._2)).getOrElse((0.0,1.0))
-    weightedTuple._1 / weightedTuple._2
+  def jaccardIndexSimilarity(u: Array[Rating], v: Array[Rating]): Double = {
+    val uSet = u.map(r=>r.item).toSet
+    val vSet = v.map(r=>r.item).toSet
+    uSet.intersect(vSet).size.toDouble / uSet.union(vSet).size.toDouble
   }
 
-  def allOnesSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
-    1.0
+  def oneSimilarity(u: Array[Rating], v: Array[Rating]): Double = 1
+
+  def similarityMapper(ratings: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Map[Int, Map[Int, Double]] = {
+    val averages = computeAllUserAverages(ratings).withDefaultValue(globalAvg(ratings))
+    val processed = preprocessRatings(ratings, averages)
+    val users = processed.map(r => r.user).distinct
+    val userRatings = processed.groupBy(r => r.user)
+    val mapped = for {u1 <- users;
+      sims = users.map(v => (v, similarity(userRatings(u1), userRatings(v)))).toMap
+    } yield (u1, sims)
+    mapped.toMap
   }
 
-  //For the moment I don't use this function. I was experimenting how to store similarity coeffs between users...
-  def jaccardIndexSimilarityMap(ratings: Array[Rating], u: Int): Map[Int, Double] = {
-    val uItems = ratings.filter(r => r.user == u).map(r => r.item)
-    ratings.map(r => (r.user, r.item))
-      .groupBy(_._1)
-      .map{case (u, items) => (u, items.intersect(uItems).size.toDouble / items.union(uItems).size.toDouble)}
-      .toMap
+  //TODO: probably nicer way of doing this without a for loop, and maybe having 
+  //the user pair (u,v) as a key would be better,
+  def allJaccardSimilarities(ratings: Array[Rating]): Map[Int, Map[Int, Double]] = {
+    val userRatings = ratings.groupBy(r=>r.user)
+    val uids = ratings.map(r=>r.user).distinct.toSet
+    val similarityMap = for (uid <- uids; 
+      //Iterate over users
+      current = userRatings(uid).map(r=>r.item).toSet;
+      //Get items the other users have rated, compute Jaccard
+      others = (uids - uid).map(u => (u,userRatings(u).map(r=>r.item).toSet))
+                               .map(r=>(r._1,r._2.intersect(current).size.toDouble/r._2.union(current).size.toDouble))
+                               .toMap//.intersect(current))
+    ) yield (uid, others)
+    similarityMap.toMap
   }
 
-  def jaccardIndexSimilarity(ratings: Array[Rating], u: Int, v: Int): Double = {
-    val uRatings = ratings.filter(r => r.user == u).map(r => r.item)
-    val vRatings = ratings.filter(r => r.user == v).map(r => r.item)
-    uRatings.intersect(vRatings).size.toDouble / uRatings.union(vRatings).size.toDouble
-  }
-
-  def similarityMae(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Int, Int) => Double): Double = {
+  //TODO: Again, maybe getting rid of for loop could be nice
+  // This function is a generalized version of your above one
+  def evaluateSimilarity(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Double = {
     val global = globalAvg(train)
+    println("Computing user averages...")
     val userAverages = computeAllUserAverages(train).withDefaultValue(global)
-    val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
-    test.map(r => (userAverages(r.user), weightedAllItemDevForOneUser(normalizedRatings, similarity, r.user, r.item), r.rating))
-      .map{case (avg, dev, r) => (predict(avg, dev) - r).abs}
-      .reduce(_ + _) / test.size
+    println("Computing User-Item Devations...")
+    val itemDevs = userItemDeviation(train, userAverages)
+    println("Computing  Similarities...")
+    val sims = similarityMapper(train, similarity)
+    println("Predicting...")
+    val preds = test.map(row => predict(row, train, sims, itemDevs, userAverages))
+    val target = test.map(r => r.rating)
+    mae(preds, target)
   }
+
+  def predict(row: Rating, train: Array[Rating], sims: Map[Int, Map[Int, Double]], itemDevs: Map[Int, Map[Int, Double]], userAverages: Map[Int, Double]): Double ={
+    val vs = train.filter(r => r.item == row.item).map(r => r.user)
+    val u = row.user
+    val uv_sum = vs.map(v => sims(u)(v)).sum
+    val ri = if (uv_sum!=0) vs.map(v => sims(u)(v) * itemDevs(row.item)(v)).sum / uv_sum else 0.0
+    val ru = userAverages(u)
+    val norm = scale(ru + ri, ru)
+    ru + ri * norm
+  }
+
 }
