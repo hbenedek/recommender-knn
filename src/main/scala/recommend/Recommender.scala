@@ -10,6 +10,8 @@ import org.apache.log4j.Level
 
 import shared.predictions._
 
+import scala.collection.immutable.ListMap
+
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val data = opt[String](required = true)
   val personal = opt[String](required = true)
@@ -53,6 +55,33 @@ object Recommender extends App {
       else (cols(0).toInt, cols(1).toString)
   }).collect().toMap
 
+  //Enhance the data with the the personal data (with ratings)
+  val train = data ++ personal
+  //Pre-compute averages and deviations
+  val globalAvgRating = globalAvg(train)
+  val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
+  val userItemDevs = userItemDeviation(train, userAverages)
+  
+  //Calculate similarity map, and keep top 300 neighbours
+  val cosineMap = similarityMapper(train, cosineSimilarity)
+  val knnMap = computeAllKNN(300, cosineMap)
+  val predUser1Item1 = predict(Rating(1, 1, 0.0), train, knnMap, userItemDevs, userAverages)
+
+  //Get the unrated movies
+  val unrated = personalFile.map(l => {
+      val cols = l.split(",").map(_.trim)
+      if (cols(0) == "id") 
+        Rating(944,0,0.0)
+      else 
+        if (cols.length < 3) 
+          Rating(944, cols(0).toInt, 0.0)
+        else
+          Rating(944, cols(0).toInt, cols(2).toDouble)
+  }).filter(r => r.rating == 0.0).collect()
+  //Predict the rating for all the unrated movies
+  val user944Preds = unrated.map(r=>(r.item, predict(r, train, knnMap, userItemDevs, userAverages)))
+  //Get the top 3 predictions, sorted by movie ID and then by rating
+  val topPreds = user944Preds.sortBy(_._1).reverse.sortBy(_._2).reverse.take(3)
 
   // Save answers as JSON
   def printToFile(content: String, 
@@ -71,13 +100,13 @@ object Recommender extends App {
           "personal" -> conf.personal()
         ),
         "R.1" -> ujson.Obj(
-          "PredUser1Item1" -> ujson.Num(0.0) // Prediction for user 1 of item 1
+          "PredUser1Item1" -> ujson.Num(predUser1Item1) // Prediction for user 1 of item 1
         ),
           // IMPORTANT: To break ties and ensure reproducibility of results,
           // please report the top-3 recommendations that have the smallest
           // movie identifier.
 
-        "R.2" -> List((254, 0.0), (338, 0.0), (615, 0.0)).map(x => ujson.Arr(x._1, movieNames(x._1), x._2))
+        "R.2" -> topPreds.toList.map(x => ujson.Arr(x._1, movieNames(x._1), x._2))//List((254, 0.0), (338, 0.0), (615, 0.0)).map(x => ujson.Arr(x._1, movieNames(x._1), x._2))
        )
       val json = write(answers, 4)
 

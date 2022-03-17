@@ -335,4 +335,59 @@ package object predictions
     ru + ri * norm
   }
 
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Part N
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  //Calculate the K nearest neighbours of user u given a similarity map
+  def knn(u: Int, k: Int, sims: Map[Int, Map[Int, Double]]): Map[Int, Double] = {
+    //import scala.collection.immutable.ListMap
+    val topk = Array(sims(u).toSeq.sortWith(_._2 > _._2):_*).slice(1,k+1).toMap.withDefaultValue(0.0)
+    topk
+  }
+  //Reduce a similarity map to only contain the K nearest neighbours for each user
+  def computeAllKNN(k: Int, sims: Map[Int, Map[Int, Double]]): Map[Int, Map[Int, Double]] = {
+    val topk = sims.keySet.map(u=>(u, knn(u,k,sims))).toMap
+    topk
+  }
+
+  //Can probably make this function better, but basically compute the similarity mapping
+  //before hand, and evaluate the MAE when using various K nearest neighbours. 
+  def evaluateKValues(train: Array[Rating], test: Array[Rating], ks: List[Int]): Map[Int,Double] = {
+    val global = globalAvg(train)
+    println("Computing user averages...")
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    println("Computing User-Item Devations...")
+    val itemDevs = userItemDeviation(train, userAverages)
+    println("Computing  Similarities...")
+    val cosineMap = similarityMapper(train, cosineSimilarity)
+
+    println("Evaluating the following k values: " + ks.mkString(", "))
+    val target =  test.map(r => r.rating)
+    val scores = for (k <- ks;
+                      knnMap = computeAllKNN(k, cosineMap);
+                      preds = test.map(row => predict(row, train, knnMap, itemDevs, userAverages))
+                  ) yield (k, mae(preds,target))
+    
+    //val knnMap = computeAllKNN(k, cosineMap)
+    scores.toMap
+  }
+
+  //Same as above, but only for a single K. Maybe we can just get rid of this function...
+  def evaluateKNN(train: Array[Rating], test: Array[Rating], k: Int): Double = {
+    val global = globalAvg(train)
+    println("Computing user averages...")
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    println("Computing User-Item Devations...")
+    val itemDevs = userItemDeviation(train, userAverages)
+    println("Computing  Similarities...")
+    val cosineMap = similarityMapper(train, cosineSimilarity)
+    println(s"Computing $k nearest neighbours...")
+    val knnMap = computeAllKNN(k, cosineMap)
+    println("Predicting...")
+    val preds = test.map(row => predict(row, train, knnMap, itemDevs, userAverages))
+    val target = test.map(r => r.rating)
+    mae(preds, target)
+  }
+
 }

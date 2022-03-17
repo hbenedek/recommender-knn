@@ -41,10 +41,33 @@ object kNN extends App {
 
 
   val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    Thread.sleep(1000) // Do everything here from train and test
-    42        // Output answer as last value
+    val out = evaluateKNN(train,test,300) // Do everything here from train and test
+    out        // Output answer as last value
   }))
   val timings = measurements.map(t => t._2) // Retrieve the timing measurements
+
+  println("Computing map...")
+  val cosineMap = similarityMapper(train, cosineSimilarity)
+  
+  val user1Top10 = knn(1,10, cosineMap)
+  val user1SelfSim = cosineMap(1)(1)
+  val user1User864Sim = user1Top10(864)
+  val user1User886Sim = cosineMap(1)(886)
+
+  val globalAvgRating = globalAvg(train)
+  val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
+  val userItemDevs = userItemDeviation(train, userAverages)
+  val predUser1Item1 = predict(Rating(1, 1, 0.0), train, Map((1,user1Top10)), userItemDevs, userAverages)
+  //println(user1Top10.mkString(" "))
+
+
+  val ks = List(10,30,50,100,200,300,400,800,943)
+  val maes = evaluateKValues(train, test, ks).toList.map{case (k,m)=>List(k,m)}
+
+
+  //println("Evaluating k=10 on Test set...")
+  //val testMAE = evaluateKNN(train,test,10)
+  //println("Test MAE: " + testMAE)
 
   // Save answers as JSON
   def printToFile(content: String, 
@@ -64,18 +87,13 @@ object kNN extends App {
           "3.Measurements" -> conf.num_measurements()
         ),
         "N.1" -> ujson.Obj(
-          "1.k10u1v1" -> ujson.Num(0.0), // Similarity between user 1 and user 1 (k=10)
-          "2.k10u1v864" -> ujson.Num(0.0), // Similarity between user 1 and user 864 (k=10)
-          "3.k10u1v886" -> ujson.Num(0.0), // Similarity between user 1 and user 886 (k=10)
-          "4.PredUser1Item1" -> ujson.Num(0.0) // Prediction of item 1 for user 1 (k=10)
+          "1.k10u1v1" -> ujson.Num(user1SelfSim), // Similarity between user 1 and user 1 (k=10)
+          "2.k10u1v864" -> ujson.Num(user1User864Sim), // Similarity between user 1 and user 864 (k=10)
+          "3.k10u1v886" -> ujson.Num(user1User886Sim), // Similarity between user 1 and user 886 (k=10)
+          "4.PredUser1Item1" -> ujson.Num(predUser1Item1) // Prediction of item 1 for user 1 (k=10)
         ),
         "N.2" -> ujson.Obj(
-          "1.kNN-Mae" -> List(10,30,50,100,200,300,400,800,943).map(k => 
-              List(
-                k,
-                0.0 // Compute MAE
-              )
-          ).toList
+          "1.kNN-Mae" -> maes
         ),
         "N.3" -> ujson.Obj(
           "1.kNN" -> ujson.Obj(
