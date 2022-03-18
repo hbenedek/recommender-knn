@@ -1,5 +1,7 @@
 package shared
 
+import org.apache.spark.rdd.RDD
+
 package object predictions
 {
   case class Rating(user: Int, item: Int, rating: Double)
@@ -212,6 +214,37 @@ package object predictions
           .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
           .reduce(_ + _) / rddTest.count() 
   } 
+
+  def predictorDistributedGlobal(rddTrain: RDD[Rating]): ((Int, Int) => Double) = {
+    val global = distributedGlobalAverage(rddTrain)
+    (u: Int, i: Int) => global
+  }
+
+  def predictorDistributedUserAverage(train: Array[Rating]): ((Int, Int) => Double) = {
+    val userMap = computeAllUserAverages(train)
+    val global = globalAvg(train)
+    (u: Int, i: Int) => userMap.getOrElse(u, global)
+  }
+
+  def predictorDistributedItemAverage(train: Array[Rating]): ((Int, Int) => Double) = {
+    val userMap = computeAllUserAverages(train)
+    val itemMap = computeAllItemAverages(train)
+    val global = globalAvg(train)
+    (u: Int, i: Int) => itemMap.getOrElse(i, global)
+  }
+
+  def predictorDistributedBaseline(train: Array[Rating]): ((Int, Int) => Double) = {
+    val userAverages = computeAllUserAverages(train)
+    val itemDeviations = computeAllItemDeviations(train, userAverages)
+    val global = globalAvg(train)
+    (u: Int, i: Int) =>  predict(userAverages.getOrElse(u, global), itemDeviations.getOrElse(i, 0.0))
+  }
+
+  def evaluateDistributedPredictor(rddTest: RDD[Rating], predictor: (Int, Int) => Double): Double = {
+    rddTest.map(r => (predictor(r.user, r.item), r.rating))
+        .map{case (pred, target) => (pred - target).abs}
+        .reduce(_ + _ ) / rddTest.count()
+  }
 
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////

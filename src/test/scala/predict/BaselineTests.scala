@@ -48,20 +48,24 @@ class BaselineTests extends AnyFunSuite with BeforeAndAfterAll {
      val result1 = globalAvg(train2)
      assert(within(result1, 3.526462, 0.0001)) 
      }
+
    test("Compute user 1 average"){ 
      val result2 = computeUserAvg(1, train2)
      assert(within(result2, 3.63302752293578, 0.0001)) 
      }
+
    test("Compute item 1 average"){ 
      val itemAvgs = computeAllItemAverages(train2)
      val result3 = itemAvgs(1)
      assert(within(result3, 3.888268156424581, 0.0001)) 
      }
+
    test("Compute item 1 average deviation"){
      val userAvgs = computeAllUserAverages(train2)
      val result4 = averageItemDeviation(1, train2, userAvgs)
       assert(within(result4, 0.3027072341444875, 0.0001))
        }
+       
    test("Compute baseline prediction for user 1 on item 1"){ 
      val result5 = predictRating(1, 1, train2)
      assert(within(result5, 4.046819980619529, 0.0001)) 
