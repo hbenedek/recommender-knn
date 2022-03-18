@@ -83,21 +83,24 @@ class DistributedBaselineTests extends AnyFunSuite with BeforeAndAfterAll {
    // 2. There should be a single reusable function to compute the MAE on the test set, given a predictor;
    // 3. There should be invocations of both to show they work on the following datasets.
    test("MAE on all four non-personalized methods on data/ml-100k/u2.base and data/ml-100k/u2.test") {
-      val predictor1 = predictorDistributedGlobal(train2)
-      val mae1 = evaluateDistributedPredictor(test2, predictor1)
-      val mae2 = 0.0
-      val mae3 = 0.0
-      val mae4 = 0.0
       //GlobalAvg
+      val predictor1 = predictorDistributedGlobal(train2, spark)
+      val mae1 = evaluateDistributedPredictor(test2, predictor1)
       assert(within(mae1, 0.9489109899999697, 0.0001))
 
       //UserAvg
-      //assert(within(mae2, 0.8383401457987351, 0.0001))
+      val predictor2 = predictorDistributedUserAverage(train2, spark)
+      val mae2 = evaluateDistributedPredictor(test2, predictor2)
+      assert(within(mae2, 0.8383401457987351, 0.0001))
 
       //ItemAvg
-      //assert(within(mae3, 0.8206951490543668, 0.0001))
+      val predictor3 = predictorDistributedItemAverage(train2, spark)
+      val mae3 = evaluateDistributedPredictor(test2, predictor3)
+      assert(within(mae3, 0.8206951490543668, 0.0001))
 
       //Baseline
-      //assert(within(mae4, 0.7604467914538644, 0.0001))
+      val predictor4 = predictorDistributedBaseline(train2, spark)
+      val mae4 = evaluateDistributedPredictor(test2, predictor4)
+      assert(within(mae4, 0.7604467914538644, 0.0001))
    }
 }

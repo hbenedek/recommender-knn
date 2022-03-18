@@ -1,6 +1,8 @@
 package shared
 
 import org.apache.spark.rdd.RDD
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.SparkSession
 
 package object predictions
 {
@@ -156,11 +158,11 @@ package object predictions
   // Part D
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  def distributedGlobalAverage(rdd: org.apache.spark.rdd.RDD[Rating]): Double = {
+  def distributedGlobalAverage(rdd: RDD[Rating]): Double = {
     rdd.map(x => x.rating).reduce(_ + _) / rdd.count()
   }
 
-  def distributedUserAverage(rdd: org.apache.spark.rdd.RDD[Rating], user: Int): Double = {
+  def distributedUserAverage(rdd: RDD[Rating], user: Int): Double = {
     val pair = rdd
           .filter(x => x.user == user)
           .map(x => x.rating)
@@ -170,7 +172,7 @@ package object predictions
     pair._1 / pair._2
   }
 
-  def distributedItemAverage(rdd: org.apache.spark.rdd.RDD[Rating], item: Int): Double = {
+  def distributedItemAverage(rdd: RDD[Rating], item: Int): Double = {
     val pair = rdd.filter(x => x.item == item)
           .map(x => x.rating)
           .map(x => (x,1))
@@ -180,9 +182,9 @@ package object predictions
   }
 
   def distributedItemDeviation(
-    rdd: org.apache.spark.rdd.RDD[Rating], 
+    rdd: RDD[Rating], 
     item: Int,
-    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]]): Double = {
+    userAvgMap: Broadcast[Map[Int,Double]]): Double = {
     val devs = rdd.filter(x => x.item == item)
       .map{case Rating(u, i, r) => (r, userAvgMap.value.getOrElse(u,0.0))}
       .map{case (r, avg) => normalizedDeviation(r, avg)}
@@ -190,54 +192,63 @@ package object predictions
     devs.reduce(_ + _) / devs.count()
   }
 
-  def distributedAllUserAverage(rdd: org.apache.spark.rdd.RDD[Rating]): org.apache.spark.rdd.RDD[(Int, Double)] = {
+  def distributedAllUserAverage(rdd: RDD[Rating]): RDD[(Int, Double)] = {
     rdd.map{case Rating(u, i, r) => (u,(r,1))}
       .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
       .map{case (k,v)=> (k, v._1/v._2)}
   }
 
+  def distributedAllItemAverage(rdd: RDD[Rating]): RDD[(Int, Double)] = {
+    rdd.map{case Rating(u, i, r) => (i,(r,1))}
+      .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
+      .map{case (k,v)=> (k, v._1/v._2)}
+  }
+
   def distributedAllItemDeviation(
-    rdd: org.apache.spark.rdd.RDD[Rating],
-    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
-    default: Double): org.apache.spark.rdd.RDD[(Int, Double)] = {
+    rdd: RDD[Rating],
+    userAvgMap: Broadcast[Map[Int,Double]],
+    default: Double): RDD[(Int, Double)] = {
     rdd.map{case Rating(u, i, r) => (i, (normalizedDeviation(r,userAvgMap.value.getOrElse(u,default)),1))}
       .reduceByKey((x,y)=>(x._1 + y._1, x._2 + y._2))
       .map{case (k,v)=> (k, v._1/v._2)}
   }
-  
+
   def distributedBaselineMAE(
-    rddTest: org.apache.spark.rdd.RDD[Rating],
-    userAvgMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
-    itemDevMap: org.apache.spark.broadcast.Broadcast[scala.collection.immutable.Map[Int,Double]],
+    rddTest: RDD[Rating], 
+    userAvgMap: Broadcast[Map[Int,Double]], 
+    itemDevMap: Broadcast[Map[Int,Double]],
     default: Double): Double ={
     rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,default), itemDevMap.value.getOrElse(i,0.0), r)}
           .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
           .reduce(_ + _) / rddTest.count() 
   } 
 
-  def predictorDistributedGlobal(rddTrain: RDD[Rating]): ((Int, Int) => Double) = {
+  def predictorDistributedGlobal(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
     val global = distributedGlobalAverage(rddTrain)
     (u: Int, i: Int) => global
   }
 
-  def predictorDistributedUserAverage(train: Array[Rating]): ((Int, Int) => Double) = {
-    val userMap = computeAllUserAverages(train)
-    val global = globalAvg(train)
-    (u: Int, i: Int) => userMap.getOrElse(u, global)
+  def predictorDistributedUserAverage(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
+    val global = distributedGlobalAverage(rddTrain)
+    val allUser = distributedAllUserAverage(rddTrain)
+    val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap.withDefaultValue(global))
+    (u: Int, i: Int) => allUserBroadcast.value.getOrElse(u , global)
   }
 
-  def predictorDistributedItemAverage(train: Array[Rating]): ((Int, Int) => Double) = {
-    val userMap = computeAllUserAverages(train)
-    val itemMap = computeAllItemAverages(train)
-    val global = globalAvg(train)
-    (u: Int, i: Int) => itemMap.getOrElse(i, global)
+  def predictorDistributedItemAverage(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
+    val global = distributedGlobalAverage(rddTrain)
+    val allItem = distributedAllItemAverage(rddTrain)
+    val allItemBroadcast = spark.sparkContext.broadcast(allItem.collect().toMap.withDefaultValue(global))
+    (u: Int, i: Int) => allItemBroadcast.value.getOrElse(i , global)
   }
 
-  def predictorDistributedBaseline(train: Array[Rating]): ((Int, Int) => Double) = {
-    val userAverages = computeAllUserAverages(train)
-    val itemDeviations = computeAllItemDeviations(train, userAverages)
-    val global = globalAvg(train)
-    (u: Int, i: Int) =>  predict(userAverages.getOrElse(u, global), itemDeviations.getOrElse(i, 0.0))
+  def predictorDistributedBaseline(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
+    val global = distributedGlobalAverage(rddTrain)
+    val allUser = distributedAllUserAverage(rddTrain)
+    val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap.withDefaultValue(global))
+    val allItemDev = distributedAllItemDeviation(rddTrain, allUserBroadcast, global)
+    val allItemDevBroadcast = spark.sparkContext.broadcast(allItemDev.collect().toMap)
+    (u: Int, i: Int) =>  predict(allUserBroadcast.value.getOrElse(u, global), allItemDevBroadcast.value.getOrElse(i, 0.0))
   }
 
   def evaluateDistributedPredictor(rddTest: RDD[Rating], predictor: (Int, Int) => Double): Double = {

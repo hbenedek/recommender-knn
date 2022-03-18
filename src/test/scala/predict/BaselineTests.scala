@@ -53,7 +53,7 @@ class BaselineTests extends AnyFunSuite with BeforeAndAfterAll {
      val result2 = computeUserAvg(1, train2)
      assert(within(result2, 3.63302752293578, 0.0001)) 
      }
-
+     
    test("Compute item 1 average"){ 
      val itemAvgs = computeAllItemAverages(train2)
      val result3 = itemAvgs(1)
@@ -65,7 +65,7 @@ class BaselineTests extends AnyFunSuite with BeforeAndAfterAll {
      val result4 = averageItemDeviation(1, train2, userAvgs)
       assert(within(result4, 0.3027072341444875, 0.0001))
        }
-       
+
    test("Compute baseline prediction for user 1 on item 1"){ 
      val result5 = predictRating(1, 1, train2)
      assert(within(result5, 4.046819980619529, 0.0001)) 
@@ -77,22 +77,26 @@ class BaselineTests extends AnyFunSuite with BeforeAndAfterAll {
    // 2. There should be a single reusable function to compute the MAE on the test set, given a predictor;
    // 3. There should be invocations of both to show they work on the following datasets.
    test("MAE on all four non-personalized methods on data/ml-100k/u2.base and data/ml-100k/u2.test") {
+      //GlobalAvg
      val predictor1 = predictorGlobal(train2)
      val mae1 = evaluatePredictor(test2, predictor1)
+     assert(within(mae1, 0.9489109899999697, 0.0001))
 
+    //UserAvg
      val predictor2 = predictorUserAverage(train2)
      val mae2 = evaluatePredictor(test2, predictor2)
+     assert(within(mae2, 0.8383401457987351, 0.0001))
 
+     //ItemAvg
      val predictor3 = predictorItemAverage(train2)
      val mae3 = evaluatePredictor(test2, predictor3)
+     assert(within(mae3, 0.8206951490543668, 0.0001))
 
+    //Baseline
      val predictor4 = predictorBaseline(train2)
      val mae4 = evaluatePredictor(test2, predictor4)
-
-     assert(within(mae1, 0.9489109899999697, 0.0001))
-     assert(within(mae2, 0.8383401457987351, 0.0001))
-     assert(within(mae3, 0.8206951490543668, 0.0001))
      assert(within(mae4, 0.7604467914538644, 0.0001))
+
    }
 }  
 

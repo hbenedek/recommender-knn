@@ -44,12 +44,9 @@ object DistributedBaseline extends App {
   val test = load(spark, conf.test(), conf.separator())
 
   val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    val allUser = distributedAllUserAverage(train)
-    val allUserBroadcast = spark.sparkContext.broadcast(allUser.collect().toMap.withDefaultValue(globalAvg))
-
-    val allItemDev = distributedAllItemDeviation(train, allUserBroadcast, globalAvg)
-    val allItemDevBroadcast = spark.sparkContext.broadcast(allItemDev.collect().toMap)
-    distributedBaselineMAE(test, allUserBroadcast, allItemDevBroadcast, globalAvg)
+      val predictor4 = predictorDistributedBaseline(train, spark)
+      val mae4 = evaluateDistributedPredictor(test, predictor4)
+      mae4
   }))
   val timings = measurements.map(t => t._2)
   val mae = mean(measurements.map(t => t._1))
