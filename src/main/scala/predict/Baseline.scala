@@ -62,11 +62,13 @@ object Baseline extends App {
 
 
   //Time the different methods:
+
   // Using global average
   println("Evaluating global average MAE...")
   val measurements_global = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    val out = evaluateGlobal(train, test)// Do everything here from train and test
-    out     // Output answer as last value
+    val predictor1 = predictorGlobal(train)
+    val mae1 = evaluatePredictor(test, predictor1)
+    mae1     
   }))
   val timings_global = measurements_global.map(t => t._2) // Retrieve the timing measurements
   val globalMAE = mean(measurements_global.map(t => t._1))
@@ -74,8 +76,9 @@ object Baseline extends App {
   //Using user average
   println("Evaluating user average MAE...")
   val measurements_user = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    val out = evaluateUserAverage(train, test)
-    out     
+    val predictor2 = predictorUserAverage(train)
+    val mae2 = evaluatePredictor(test, predictor2)   
+    mae2
   }))
   val timings_user = measurements_user.map(t => t._2) 
   val userMAE = mean(measurements_user.map(t => t._1))
@@ -83,8 +86,9 @@ object Baseline extends App {
   //Using item average
   println("Evaluating item average MAE...")
   val measurements_item = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    val out = evaluateItemAverage(train, test)
-    out 
+     val predictor3 = predictorItemAverage(train)
+     val mae3 = evaluatePredictor(test, predictor3)
+     mae3
   }))
   val timings_item = measurements_item.map(t => t._2)
   val itemMAE = mean(measurements_item.map(t => t._1))
@@ -92,8 +96,9 @@ object Baseline extends App {
   //Using baseline prediction method
   println("Evaluating baseline MAE...")
   val measurements_baseline = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-    val out = evaluateBaseline(train, test)
-    out
+    val predictor4 = predictorBaseline(train)
+    val mae4 = evaluatePredictor(test, predictor4)
+    mae4
   }))
   val timings_baseline = measurements_baseline.map(t => t._2) 
   val baselineMAE = mean(measurements_baseline.map(t => t._1))
