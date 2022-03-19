@@ -352,6 +352,30 @@ package object predictions
     ru + ri * norm
   }
 
+  def computeOnesPredictor(train: Array[Rating]): ((Int,Int)=>Double) = {
+    val global = globalAvg(train)
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    val itemDevs = userItemDeviation(train, userAverages)
+    val sims = similarityMapper(train, oneSimilarity)
+    (u: Int, i: Int) => predict(Rating(u,i,0.0), train, sims, itemDevs, userAverages)
+  }
+
+  def computeCosinePredictor(train: Array[Rating]): ((Int,Int)=>Double) = {
+    val global = globalAvg(train)
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    val itemDevs = userItemDeviation(train, userAverages)
+    val sims = similarityMapper(train, cosineSimilarity)
+    (u: Int, i: Int) => predict(Rating(u,i,0.0), train, sims, itemDevs, userAverages)
+  }
+
+  def computeJaccardPredictor(train: Array[Rating]): ((Int,Int)=>Double) = {
+    val global = globalAvg(train)
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    val itemDevs = userItemDeviation(train, userAverages)
+    val sims = similarityMapper(train, jaccardIndexSimilarity)
+    (u: Int, i: Int) => predict(Rating(u,i,0.0), train, sims, itemDevs, userAverages)
+  }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Part N
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -405,6 +429,15 @@ package object predictions
     val preds = test.map(row => predict(row, train, knnMap, itemDevs, userAverages))
     val target = test.map(r => r.rating)
     mae(preds, target)
+  }
+
+  def computeKnnPredictor(train: Array[Rating], k: Int): ((Int,Int)=>Double) = {
+    val global = globalAvg(train)
+    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+    val itemDevs = userItemDeviation(train, userAverages)
+    val sims = similarityMapper(train, cosineSimilarity)
+    val knnMap = computeAllKNN(k, sims)
+    (u: Int, i: Int) => predict(Rating(u,i,0.0), train, knnMap, itemDevs, userAverages)
   }
 
 }

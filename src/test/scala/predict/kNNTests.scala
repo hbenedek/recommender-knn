@@ -48,27 +48,39 @@ class kNNTests extends AnyFunSuite with BeforeAndAfterAll {
    // decimal after the (floating) point, on data/ml-100k/u2.base (as loaded above).
    test("kNN predictor with k=10") { 
      // Create predictor on train2
+     val knnPredictor = computeKnnPredictor(train2, 10)
 
      // Similarity between user 1 and itself
-     assert(within(1.0, 0.0, 0.0001))
+     val cosineMap = similarityMapper(train2, cosineSimilarity)
+     val user1Top10 = knn(1,10, cosineMap)
+     val user1SelfSim = cosineMap(1)(1)
+     assert(within(user1SelfSim, 1.0000, 0.0001))
  
      // Similarity between user 1 and 864
-     assert(within(1.0, 0.0, 0.0001))
+     val user1User864Sim = user1Top10(864)
+     assert(within(user1User864Sim, 0.2423, 0.0001))
 
      // Similarity between user 1 and 886
-     assert(within(1.0, 0.0, 0.0001))
+     val user1User886Sim = user1Top10(886)
+     assert(within(user1User886Sim, 0.0000, 0.0001))
 
      // Prediction user 1 and item 1
-     assert(within(1.0, 0.0, 0.0001))
+     val predUser1Item1 = knnPredictor(1,1)
+     assert(within(predUser1Item1, 4.3191, 0.0001))
 
-     // MAE on test2 
-     assert(within(1.0, 0.0, 0.0001))
+     // MAE on test2
+     val knnMae = evaluatePredictor(test2, knnPredictor)
+     assert(within(knnMae, 0.8287, 0.0001))
    } 
 
    test("kNN Mae") {
      // Compute MAE for k around the baseline MAE
-     
+     val knnPredictor = computeKnnPredictor(train2, 100)
+     val baselinePredictor = predictorBaseline(train2)
+
+     val knnMae = evaluatePredictor(test2, knnPredictor)
+     val baselineMae = evaluatePredictor(test2, baselinePredictor)
      // Ensure the MAEs are indeed lower/higher than baseline
-     assert(1.0 < 0.0)
+     assert(knnMae < baselineMae)
    }
 }

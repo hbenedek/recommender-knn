@@ -42,29 +42,39 @@ object Personalized extends App {
   println("Number of users: " + train.map(r=>r.user).distinct.size)
 
   val globalAvgRating = globalAvg(train)
-  val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
+  val userAverages = computeAllUserAverages(train).withDefaultValue(globalAvgRating)
   val normalizedRatings = computeAllNormalizedDevs(train, userAverages)
   val userItemDevs = userItemDeviation(train, userAverages)
 
   println("Calculating results with similarity constant one")
-  val oneMap = similarityMapper(train, oneSimilarity)
-  val onePredUser1Item1 = predict(Rating(1, 1, 0.0), train, oneMap, userItemDevs, userAverages) 
-  val onesMae = evaluateSimilarity(train, test, oneSimilarity)
+  //val oneMap = similarityMapper(train, oneSimilarity)
+  //val onePredUser1Item1 = predict(Rating(1, 1, 0.0), train, oneMap, userItemDevs, userAverages) 
+  //val onesMae = evaluateSimilarity(train, test, oneSimilarity)
+  val onesPredictor = computeOnesPredictor(train)
+  val onePredUser1Item1 = onesPredictor(1,1)
+  val onesMae = evaluatePredictor(test, onesPredictor)
  
 
   println("Calculating results with Jaccard similarity")
-  val u1 = train.filter(r => r.user == 1)
-  val u2 = train.filter(r => r.user == 2)
+  val u1 = preprocessRatings(train.filter(r => r.user == 1), userAverages)
+  val u2 = preprocessRatings(train.filter(r => r.user == 2), userAverages)
   val jaccardUser1User2 = jaccardIndexSimilarity(u1, u2)
-  val jaccardMap = similarityMapper(train, jaccardIndexSimilarity)
-  val jaccardPredUser1Item1 = predict(Rating(1, 1, 0.0), train, jaccardMap, userItemDevs, userAverages) 
-  val jaccardMae = evaluateSimilarity(train, test, jaccardIndexSimilarity)
-
+  //val jaccardMap = similarityMapper(train, jaccardIndexSimilarity)
+  //val jaccardPredUser1Item1 = predict(Rating(1, 1, 0.0), train, jaccardMap, userItemDevs, userAverages) 
+  //val jaccardMae = evaluateSimilarity(train, test, jaccardIndexSimilarity)
+  val jaccardPredictor = computeJaccardPredictor(train)
+  val jaccardPredUser1Item1 = jaccardPredictor(1,1)
+  val jaccardMae = evaluatePredictor(test, jaccardPredictor)
+  
   println("Calculating results with Cosine similarity")
-  val cosineMap = similarityMapper(train, cosineSimilarity)
-  val adjustedCosineUser1User2 = cosineMap(1)(2)
-  val cosinePredUser1Item1 = predict(Rating(1, 1, 0.0), train, cosineMap, userItemDevs, userAverages) 
-  val cosineMae = evaluateSimilarity(train, test, cosineSimilarity)
+  //val cosineMap = similarityMapper(train, cosineSimilarity)
+  //val adjustedCosineUser1User2 = cosineMap(1)(2)
+  //val cosinePredUser1Item1 = predict(Rating(1, 1, 0.0), train, cosineMap, userItemDevs, userAverages) 
+  //val cosineMae = evaluateSimilarity(train, test, cosineSimilarity)
+  val adjustedCosineUser1User2 = cosineSimilarity(u1,u2)
+  val cosinePredictor = computeCosinePredictor(train)
+  val cosinePredUser1Item1 = cosinePredictor(1,1)
+  val cosineMae = evaluatePredictor(test, cosinePredictor)
 
   // Save answers as JSON
   def printToFile(content: String, 

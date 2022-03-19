@@ -57,15 +57,9 @@ object Recommender extends App {
 
   //Enhance the data with the the personal data (with ratings)
   val train = data ++ personal
-  //Pre-compute averages and deviations
-  val globalAvgRating = globalAvg(train)
-  val userAverages = computeAllItemAverages(train).withDefaultValue(globalAvgRating)
-  val userItemDevs = userItemDeviation(train, userAverages)
   
-  //Calculate similarity map, and keep top 300 neighbours
-  val cosineMap = similarityMapper(train, cosineSimilarity)
-  val knnMap = computeAllKNN(300, cosineMap)
-  val predUser1Item1 = predict(Rating(1, 1, 0.0), train, knnMap, userItemDevs, userAverages)
+  val knnPredictor = computeKnnPredictor(train, 300)
+  val predUser1Item1 = knnPredictor(1, 1)
 
   //Get the unrated movies
   val unrated = personalFile.map(l => {
@@ -78,11 +72,12 @@ object Recommender extends App {
         else
           Rating(944, cols(0).toInt, cols(2).toDouble)
   }).filter(r => r.rating == 0.0).collect()
+  
   //Predict the rating for all the unrated movies
-  val user944Preds = unrated.map(r=>(r.item, predict(r, train, knnMap, userItemDevs, userAverages)))
+  val user944Preds = unrated.map(r=>(r.item, knnPredictor(r.user, r.item)))
   //Get the top 3 predictions, sorted by movie ID and then by rating
   val topPreds = user944Preds.sortBy(_._1).reverse.sortBy(_._2).reverse.take(3)
-
+  
   // Save answers as JSON
   def printToFile(content: String, 
                   location: String = "./answers.json") =

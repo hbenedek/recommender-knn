@@ -45,37 +45,53 @@ class PersonalizedTests extends AnyFunSuite with BeforeAndAfterAll {
    // decimal after the (floating) point, on data/ml-100k/u2.base (as loaded above).
    test("Test uniform unary similarities") { 
      // Create predictor with uniform similarities
-     
+     val uniformPredictor = computeOnesPredictor(train2)
+     val predUser1Item1 = uniformPredictor(1,1)
      // Compute personalized prediction for user 1 on item 1
-     assert(within(1.0, 0.0, 0.0001))
-
+     assert(within(predUser1Item1, 4.0468, 0.0001))
+    
+     val uniformMae = evaluatePredictor(test2,uniformPredictor)
      // MAE 
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(uniformMae, 0.7604, 0.0001))
    } 
 
    test("Test ajusted cosine similarity") { 
      // Create predictor with adjusted cosine similarities
+     val cosinePredictor = computeCosinePredictor(train2)
 
      // Similarity between user 1 and user 2
-     assert(within(1.0, 0.0, 0.0001))
+     val global = globalAvg(train2)
+     val userAverages = computeAllUserAverages(train2).withDefaultValue(global)
+     val u1 = preprocessRatings(train2.filter(r => r.user == 1), userAverages)
+     val u2 = preprocessRatings(train2.filter(r => r.user == 2), userAverages)
+     val adjustedCosineUser1User2 = cosineSimilarity(u1,u2)
+     assert(within(adjustedCosineUser1User2, 0.0730, 0.0001))
 
      // Compute personalized prediction for user 1 on item 1
-     assert(within(1.0, 0.0, 0.0001))
+     val cosinePredUser1Item1 = cosinePredictor(1,1)
+     assert(within(cosinePredUser1Item1, 4.0968, 0.0001))
 
      // MAE 
-     assert(within(1.0, 0.0, 0.0001))
+     val cosineMae = evaluatePredictor(test2, cosinePredictor)
+     assert(within(cosineMae, 1.0582, 0.0001))
    }
 
    test("Test jaccard similarity") { 
      // Create predictor with jaccard similarities
+     val jaccardPredictor = computeJaccardPredictor(train2)
 
      // Similarity between user 1 and user 2
-     assert(within(1.0, 0.0, 0.0001))
+     val u1 = train2.filter(r => r.user == 1)
+     val u2 = train2.filter(r => r.user == 2)
+     val jaccardUser1User2 = jaccardIndexSimilarity(u1, u2)
+     assert(within(jaccardUser1User2, 0.0319, 0.0001))
 
      // Compute personalized prediction for user 1 on item 1
-     assert(within(1.0, 0.0, 0.0001))
+     val jaccardPredUser1Item1 = jaccardPredictor(1,1)
+     assert(within(jaccardPredUser1Item1, 4.0982, 0.0001))
 
-     // MAE 
-     assert(within(1.0, 0.0, 0.0001))
+     // MAE
+     val jaccardMae = evaluatePredictor(test2, jaccardPredictor)
+     assert(within(jaccardMae, 0.7556, 0.0001))
    }
 }
