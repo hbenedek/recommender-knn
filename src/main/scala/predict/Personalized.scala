@@ -47,9 +47,7 @@ object Personalized extends App {
   val userItemDevs = userItemDeviation(train, userAverages)
 
   println("Calculating results with similarity constant one")
-  //val oneMap = similarityMapper(train, oneSimilarity)
-  //val onePredUser1Item1 = predict(Rating(1, 1, 0.0), train, oneMap, userItemDevs, userAverages) 
-  //val onesMae = evaluateSimilarity(train, test, oneSimilarity)
+  
   val onesPredictor = computeOnesPredictor(train)
   val onePredUser1Item1 = onesPredictor(1,1)
   val onesMae = evaluatePredictor(test, onesPredictor)
@@ -59,18 +57,13 @@ object Personalized extends App {
   val u1 = preprocessRatings(train.filter(r => r.user == 1), userAverages)
   val u2 = preprocessRatings(train.filter(r => r.user == 2), userAverages)
   val jaccardUser1User2 = jaccardIndexSimilarity(u1, u2)
-  //val jaccardMap = similarityMapper(train, jaccardIndexSimilarity)
-  //val jaccardPredUser1Item1 = predict(Rating(1, 1, 0.0), train, jaccardMap, userItemDevs, userAverages) 
-  //val jaccardMae = evaluateSimilarity(train, test, jaccardIndexSimilarity)
+
   val jaccardPredictor = computeJaccardPredictor(train)
   val jaccardPredUser1Item1 = jaccardPredictor(1,1)
   val jaccardMae = evaluatePredictor(test, jaccardPredictor)
   
   println("Calculating results with Cosine similarity")
-  //val cosineMap = similarityMapper(train, cosineSimilarity)
-  //val adjustedCosineUser1User2 = cosineMap(1)(2)
-  //val cosinePredUser1Item1 = predict(Rating(1, 1, 0.0), train, cosineMap, userItemDevs, userAverages) 
-  //val cosineMae = evaluateSimilarity(train, test, cosineSimilarity)
+
   val adjustedCosineUser1User2 = cosineSimilarity(u1,u2)
   val cosinePredictor = computeCosinePredictor(train)
   val cosinePredUser1Item1 = cosinePredictor(1,1)

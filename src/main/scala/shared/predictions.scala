@@ -123,6 +123,10 @@ package object predictions
     pred.zip(r).map{case (a,b) => (b-a).abs}.sum/r.size
   }
 
+  //Helper functions to fit recommender models using different prediction methods, all functions return
+  //a predictor with the signiture (Int, Int) => Double, where the arguments are the user and movie id, and the 
+  //returned double is the prediction
+
   def predictorGlobal(train: Array[Rating]): ((Int, Int) => Double) = {
     val global = globalAvg(train)
     (u: Int, i: Int) => global
@@ -148,6 +152,7 @@ package object predictions
     (u: Int, i: Int) =>  predict(userAverages.getOrElse(u, global), itemDeviations.getOrElse(i, 0.0))
   }
 
+  //Calculates the MAE on a test set, given a fitted predictor function
   def evaluatePredictor(test: Array[Rating], predictor: (Int, Int) => Double): Double = {
     test.map(r => (predictor(r.user, r.item), r.rating))
         .map{case (pred, target) => (pred - target).abs}
@@ -213,15 +218,19 @@ package object predictions
       .map{case (k,v)=> (k, v._1/v._2)}
   }
 
-  def distributedBaselineMAE(
-    rddTest: RDD[Rating], 
-    userAvgMap: Broadcast[Map[Int,Double]], 
-    itemDevMap: Broadcast[Map[Int,Double]],
-    default: Double): Double ={
-    rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,default), itemDevMap.value.getOrElse(i,0.0), r)}
-          .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
-          .reduce(_ + _) / rddTest.count() 
-  } 
+  //def distributedBaselineMAE(
+  //  rddTest: RDD[Rating], 
+  //  userAvgMap: Broadcast[Map[Int,Double]], 
+  //  itemDevMap: Broadcast[Map[Int,Double]],
+  //  default: Double): Double ={
+  //  rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,default), itemDevMap.value.getOrElse(i,0.0), r)}
+  //        .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
+  //        .reduce(_ + _) / rddTest.count() 
+  //} 
+
+  //Helper functions to fit recommender models using different prediction methods, all functions return
+  //a predictor with the signiture (Int, Int) => Double, where the arguments are the user and movie id, and the 
+  //returned double is the prediction 
 
   def predictorDistributedGlobal(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
     val global = distributedGlobalAverage(rddTrain)
@@ -251,6 +260,7 @@ package object predictions
     (u: Int, i: Int) =>  predict(allUserBroadcast.value.getOrElse(u, global), allItemDevBroadcast.value.getOrElse(i, 0.0))
   }
 
+  //Calculates the MAE on a test set, given a fitted predictor function
   def evaluateDistributedPredictor(rddTest: RDD[Rating], predictor: (Int, Int) => Double): Double = {
     rddTest.map(r => (predictor(r.user, r.item), r.rating))
         .map{case (pred, target) => (pred - target).abs}
@@ -266,6 +276,7 @@ package object predictions
     ratings.map(r => Rating(r.user, r.item, normalizedDeviation(r.rating, userAverages(r.user))))
   }
 
+  // Processes training set to calculate cosine similarity
   def preprocessRatings(ratings: Array[Rating], userAverages: Map[Int,Double]): Array[Rating] = {
     val devs = computeAllNormalizedDevs(ratings, userAverages)
     val denominators = devs.map(r => (r.user, r.rating * r.rating))
@@ -275,6 +286,7 @@ package object predictions
     devs.map(r => Rating(r.user, r.item, r.rating/denominators(r.user)))
   }
 
+  //Returns a map containing every item deviation, givan a training set
   def userItemDeviation(ratings: Array[Rating], userAverages: Map[Int,Double]): Map[Int,Map[Int,Double]] = {
     val averages = userAverages.withDefaultValue(globalAvg(ratings))
     val groupedItems = ratings.groupBy(r => r.item)
@@ -282,6 +294,8 @@ package object predictions
                                         .map{case (u,r) => (u, (r - averages(u)) / scale(r, averages(u)))}.toMap)}
   }  
 
+  // calculates the cosine similarity betwwen two users with PREPROCESSED ratings 
+  //(for more detail see preprocessRatings function)
   def cosineSimilarity(u: Array[Rating], v: Array[Rating]): Double = {
     (u ++ v).map(r => (r.item,r.rating))
             .groupBy(_._1)
@@ -299,6 +313,7 @@ package object predictions
 
   def oneSimilarity(u: Array[Rating], v: Array[Rating]): Double = 1
 
+  // For a given training set and similarity function, retuns a map containing the calculated similarities between all user pairs
   def similarityMapper(ratings: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Map[Int, Map[Int, Double]] = {
     val averages = computeAllUserAverages(ratings).withDefaultValue(globalAvg(ratings))
     val processed = preprocessRatings(ratings, averages)
@@ -310,38 +325,37 @@ package object predictions
     mapped.toMap
   }
 
-  //TODO: probably nicer way of doing this without a for loop, and maybe having 
   //the user pair (u,v) as a key would be better,
-  def allJaccardSimilarities(ratings: Array[Rating]): Map[Int, Map[Int, Double]] = {
-    val userRatings = ratings.groupBy(r=>r.user)
-    val uids = ratings.map(r=>r.user).distinct.toSet
-    val similarityMap = for (uid <- uids; 
-      //Iterate over users
-      current = userRatings(uid).map(r=>r.item).toSet;
-      //Get items the other users have rated, compute Jaccard
-      others = (uids - uid).map(u => (u,userRatings(u).map(r=>r.item).toSet))
-                               .map(r=>(r._1,r._2.intersect(current).size.toDouble/r._2.union(current).size.toDouble))
-                               .toMap//.intersect(current))
-    ) yield (uid, others)
-    similarityMap.toMap
-  }
+  //def allJaccardSimilarities(ratings: Array[Rating]): Map[Int, Map[Int, Double]] = {
+  //  val userRatings = ratings.groupBy(r=>r.user)
+  //  val uids = ratings.map(r=>r.user).distinct.toSet
+  //  val similarityMap = for (uid <- uids; 
+  //    Iterate over users
+  //    current = userRatings(uid).map(r=>r.item).toSet;
+  //    Get items the other users have rated, compute Jaccard
+  //    others = (uids - uid).map(u => (u,userRatings(u).map(r=>r.item).toSet))
+  //                             .map(r=>(r._1,r._2.intersect(current).size.toDouble/r._2.union(current).size.toDouble))
+  //                             .toMap//.intersect(current))
+  //  ) yield (uid, others)
+  ///  similarityMap.toMap
+  //}
 
-  //TODO: Again, maybe getting rid of for loop could be nice
-  // This function is a generalized version of your above one
-  def evaluateSimilarity(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Double = {
-    val global = globalAvg(train)
-    println("Computing user averages...")
-    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
-    println("Computing User-Item Devations...")
-    val itemDevs = userItemDeviation(train, userAverages)
-    println("Computing  Similarities...")
-    val sims = similarityMapper(train, similarity)
-    println("Predicting...")
-    val preds = test.map(row => predict(row, train, sims, itemDevs, userAverages))
-    val target = test.map(r => r.rating)
-    mae(preds, target)
-  }
+  //def evaluateSimilarity(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Double = {
+  //  val global = globalAvg(train)
+  //  println("Computing user averages...")
+  //  val userAverages = computeAllUserAverages(train).withDefaultValue(global)
+  //  println("Computing User-Item Devations...")
+  //  val itemDevs = userItemDeviation(train, userAverages)
+  //  println("Computing  Similarities...")
+  //  val sims = similarityMapper(train, similarity)
+  //  println("Predicting...")
+  //  val preds = test.map(row => predict(row, train, sims, itemDevs, userAverages))
+  //  val target = test.map(r => r.rating)
+  //  mae(preds, target)
+  //}
 
+  //Given a Rating object and a similarity metric, the function calculates the weighted item deviation for the item
+  //and with the user average it predicts a rating for the item
   def predict(row: Rating, train: Array[Rating], sims: Map[Int, Map[Int, Double]], itemDevs: Map[Int, Map[Int, Double]], userAverages: Map[Int, Double]): Double ={
     val vs = train.filter(r => r.item == row.item).map(r => r.user)
     val u = row.user
