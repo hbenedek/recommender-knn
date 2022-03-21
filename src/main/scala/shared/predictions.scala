@@ -126,7 +126,6 @@ package object predictions
   //Helper functions to fit recommender models using different prediction methods, all functions return
   //a predictor with the signiture (Int, Int) => Double, where the arguments are the user and movie id, and the 
   //returned double is the prediction
-
   def predictorGlobal(train: Array[Rating]): ((Int, Int) => Double) = {
     val global = globalAvg(train)
     (u: Int, i: Int) => global
@@ -218,20 +217,9 @@ package object predictions
       .map{case (k,v)=> (k, v._1/v._2)}
   }
 
-  //def distributedBaselineMAE(
-  //  rddTest: RDD[Rating], 
-  //  userAvgMap: Broadcast[Map[Int,Double]], 
-  //  itemDevMap: Broadcast[Map[Int,Double]],
-  //  default: Double): Double ={
-  //  rddTest.map{case Rating(u,i,r) => (userAvgMap.value.getOrElse(u,default), itemDevMap.value.getOrElse(i,0.0), r)}
-  //        .map{case (avg, dev, r) => (predict(avg,dev) - r).abs}
-  //        .reduce(_ + _) / rddTest.count() 
-  //} 
-
   //Helper functions to fit recommender models using different prediction methods, all functions return
   //a predictor with the signiture (Int, Int) => Double, where the arguments are the user and movie id, and the 
   //returned double is the prediction 
-
   def predictorDistributedGlobal(rddTrain: RDD[Rating], spark: SparkSession): ((Int, Int) => Double) = {
     val global = distributedGlobalAverage(rddTrain)
     (u: Int, i: Int) => global
@@ -325,35 +313,6 @@ package object predictions
     mapped.toMap
   }
 
-  //the user pair (u,v) as a key would be better,
-  //def allJaccardSimilarities(ratings: Array[Rating]): Map[Int, Map[Int, Double]] = {
-  //  val userRatings = ratings.groupBy(r=>r.user)
-  //  val uids = ratings.map(r=>r.user).distinct.toSet
-  //  val similarityMap = for (uid <- uids; 
-  //    Iterate over users
-  //    current = userRatings(uid).map(r=>r.item).toSet;
-  //    Get items the other users have rated, compute Jaccard
-  //    others = (uids - uid).map(u => (u,userRatings(u).map(r=>r.item).toSet))
-  //                             .map(r=>(r._1,r._2.intersect(current).size.toDouble/r._2.union(current).size.toDouble))
-  //                             .toMap//.intersect(current))
-  //  ) yield (uid, others)
-  ///  similarityMap.toMap
-  //}
-
-  //def evaluateSimilarity(train: Array[Rating], test: Array[Rating], similarity: (Array[Rating], Array[Rating]) => Double): Double = {
-  //  val global = globalAvg(train)
-  //  println("Computing user averages...")
-  //  val userAverages = computeAllUserAverages(train).withDefaultValue(global)
-  //  println("Computing User-Item Devations...")
-  //  val itemDevs = userItemDeviation(train, userAverages)
-  //  println("Computing  Similarities...")
-  //  val sims = similarityMapper(train, similarity)
-  //  println("Predicting...")
-  //  val preds = test.map(row => predict(row, train, sims, itemDevs, userAverages))
-  //  val target = test.map(r => r.rating)
-  //  mae(preds, target)
-  //}
-
   //Given a Rating object and a similarity metric, the function calculates the weighted item deviation for the item
   //and with the user average it predicts a rating for the item
   def predict(row: Rating, train: Array[Rating], sims: Map[Int, Map[Int, Double]], itemDevs: Map[Int, Map[Int, Double]], userAverages: Map[Int, Double]): Double ={
@@ -366,6 +325,7 @@ package object predictions
     ru + ri * norm
   }
 
+  //Create the predictors for the Uniform, Cosine, and Jaccard similarities.
   def computeOnesPredictor(train: Array[Rating]): ((Int,Int)=>Double) = {
     val global = globalAvg(train)
     val userAverages = computeAllUserAverages(train).withDefaultValue(global)
@@ -396,7 +356,6 @@ package object predictions
 
   //Calculate the K nearest neighbours of user u given a similarity map
   def knn(u: Int, k: Int, sims: Map[Int, Map[Int, Double]]): Map[Int, Double] = {
-    //import scala.collection.immutable.ListMap
     val topk = Array(sims(u).toSeq.sortWith(_._2 > _._2):_*).slice(1,k+1).toMap.withDefaultValue(0.0)
     topk
   }
@@ -408,6 +367,7 @@ package object predictions
 
   //Can probably make this function better, but basically compute the similarity mapping
   //before hand, and evaluate the MAE when using various K nearest neighbours. 
+  //This is done to avoid re-computing the similarity map for each K
   def evaluateKValues(train: Array[Rating], test: Array[Rating], ks: List[Int]): Map[Int,Double] = {
     val global = globalAvg(train)
     println("Computing user averages...")
@@ -428,23 +388,7 @@ package object predictions
     scores.toMap
   }
 
-  //Same as above, but only for a single K. Maybe we can just get rid of this function...
-  def evaluateKNN(train: Array[Rating], test: Array[Rating], k: Int): Double = {
-    val global = globalAvg(train)
-    println("Computing user averages...")
-    val userAverages = computeAllUserAverages(train).withDefaultValue(global)
-    println("Computing User-Item Devations...")
-    val itemDevs = userItemDeviation(train, userAverages)
-    println("Computing  Similarities...")
-    val cosineMap = similarityMapper(train, cosineSimilarity)
-    println(s"Computing $k nearest neighbours...")
-    val knnMap = computeAllKNN(k, cosineMap)
-    println("Predicting...")
-    val preds = test.map(row => predict(row, train, knnMap, itemDevs, userAverages))
-    val target = test.map(r => r.rating)
-    mae(preds, target)
-  }
-
+  //Create the predictors for the KNNs
   def computeKnnPredictor(train: Array[Rating], k: Int): ((Int,Int)=>Double) = {
     val global = globalAvg(train)
     val userAverages = computeAllUserAverages(train).withDefaultValue(global)
