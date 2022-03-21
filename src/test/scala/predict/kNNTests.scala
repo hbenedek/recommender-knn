@@ -53,8 +53,8 @@ class kNNTests extends AnyFunSuite with BeforeAndAfterAll {
      // Similarity between user 1 and itself
      val cosineMap = similarityMapper(train2, cosineSimilarity)
      val user1Top10 = knn(1,10, cosineMap)
-     val user1SelfSim = cosineMap(1)(1)
-     assert(within(user1SelfSim, 1.0000, 0.0001))
+     val user1SelfSim = user1Top10(1)
+     assert(within(user1SelfSim, 0.0000, 0.0001))
  
      // Similarity between user 1 and 864
      val user1User864Sim = user1Top10(864)

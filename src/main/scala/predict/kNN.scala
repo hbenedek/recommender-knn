@@ -47,18 +47,17 @@ object kNN extends App {
   }))
   val timings = measurements.map(t => t._2) // Retrieve the timing measurements
 
-  println("Computing map...")
   val cosineMap = similarityMapper(train, cosineSimilarity)
   
   val user1Top10 = knn(1,10, cosineMap)
-  val user1SelfSim = cosineMap(1)(1)
+  val user1SelfSim = user1Top10(1)
   val user1User864Sim = user1Top10(864)
   val user1User886Sim = user1Top10(886)
 
   val knnPredictor = computeKnnPredictor(train, 10)
   val predUser1Item1 = knnPredictor(1,1)
 
-  val ks = List(10,30,50,100,200,300,400,800,943)
+  val ks = List(10,100,50,100,200,300,400,800,943)
   val maes = evaluateKValues(train, test, ks).toList.map{case (k,m)=>List(k,m)}
 
   // Save answers as JSON
