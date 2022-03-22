@@ -59,7 +59,7 @@ package object predictions
   }
 
   def normalizedDeviation(x: Double, y: Double) = {
-    (x - y)/scale(x,y)
+    (x - y) / scale(x,y)
   }
 
   def predict(userAvg: Double, itemDev: Double): Double = {
@@ -67,34 +67,29 @@ package object predictions
   }
 
   def globalAvg(ratings: Array[Rating]): Double = {
-    mean(ratings.map(r=>r.rating))
+    mean(ratings.map(r => r.rating))
   }
 
   def computeUserAvg(uid: Int, ratings: Array[Rating]): Double = {
-    val userRatings = ratings.filter(r => r.user == uid).map(r=>r.rating)
-    return mean(userRatings)
+    mean(ratings.filter(r => r.user == uid).map(r => r.rating))
   }
 
   def computeAllUserAverages(ratings: Array[Rating]): Map[Int, Double] = {
-    ratings.groupBy(r=>r.user).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
-    
+    ratings.groupBy(r=>r.user).map{case (k,v) => (k, mean(v.map(r => r.rating)))}
   }
 
   def computeAllItemAverages(ratings: Array[Rating]): Map[Int, Double] = {
-    val x = ratings.groupBy(r=>r.item).map{case (k,v)=>(k, mean(v.map(r=>r.rating)))}
-    x
+    ratings.groupBy(r=>r.item).map{case (k,v) => (k, mean(v.map(r => r.rating)))}
   }
   
   def computeItemAvg(iid: Int, ratings: Array[Rating]): Double = {
-    var itemRatings = ratings.filter(r => r.item == iid).map(r=>r.rating)
-    return mean(itemRatings)
+    mean(ratings.filter(r => r.item == iid).map(r => r.rating))
   }
 
   def averageItemDeviation(iid: Int, ratings: Array[Rating], userAverages: Map[Int,Double]): Double = { 
-    val itemRatings = ratings.filter(r => r.item == iid)
-    val userRatings = itemRatings.map(r=>(r.user, r.rating))
-    val devs = userRatings.map{case (uid, r)=>(r-userAverages(uid))/scale(r,userAverages(uid))}
-    return devs.sum/devs.size
+    val filtered = ratings.filter(r => r.item == iid)
+    filtered.map(r=>(r.user, r.rating))
+            .map{case (u, r)=> normalizedDeviation(r, userAverages(u))}.sum / filtered.size
   }
 
   def computeAllItemDeviations(ratings: Array[Rating], userAverages: Map[Int,Double]): Map[Int,Double] = {
@@ -103,16 +98,15 @@ package object predictions
     //Group by the items
     val groupedItems = ratings.groupBy(r => r.item)
     //Compute the average deviations
-    val devs = groupedItems.map{case (k, v)=>(k, mean(v.map(r=>(r.user, r.rating))
-                                                  .map{case (u,r)=>(r-averages(u))/scale(r, averages(u))}))}
-    devs                    
+    groupedItems.map{case (k, v) => (k, mean(v.map(r=>(r.user, r.rating))
+                                                  .map{case (u,r)=> normalizedDeviation(r, averages(u))}))}                   
   }
   
-  def predictRating(uid: Int, iid: Int, ratings: Array[Rating]): Double = {
+  def predictRating(u: Int, i: Int, ratings: Array[Rating]): Double = {
     val userAvg = computeAllUserAverages(ratings)
-    val meanDeviation = averageItemDeviation(iid, ratings, userAvg)
-    val norm = scale(userAvg(uid) + meanDeviation, userAvg(uid))
-    return userAvg(uid) + meanDeviation * norm
+    val meanDeviation = averageItemDeviation(i, ratings, userAvg)
+    val norm = scale(userAvg(u) + meanDeviation, userAvg(u))
+    userAvg(u) + meanDeviation * norm
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -279,8 +273,9 @@ package object predictions
     val averages = userAverages.withDefaultValue(globalAvg(ratings))
     val groupedItems = ratings.groupBy(r => r.item)
     groupedItems.map{case (k, v) => (k, v.map(r=>(r.user, r.rating))
-                                        .map{case (u,r) => (u, (r - averages(u)) / scale(r, averages(u)))}.toMap)}
+                                        .map{case (u,r) => (u, normalizedDeviation(r, averages(u)))}.toMap)}
   }  
+  
 
   // calculates the cosine similarity betwwen two users with PREPROCESSED ratings 
   //(for more detail see preprocessRatings function)
@@ -356,13 +351,11 @@ package object predictions
 
   //Calculate the K nearest neighbours of user u given a similarity map
   def knn(u: Int, k: Int, sims: Map[Int, Map[Int, Double]]): Map[Int, Double] = {
-    val topk = Array(sims(u).toSeq.sortWith(_._2 > _._2):_*).slice(1,k+1).toMap.withDefaultValue(0.0)
-    topk
+    Array(sims(u).toSeq.sortWith(_._2 > _._2):_*).slice(1,k+1).toMap.withDefaultValue(0.0)
   }
   //Reduce a similarity map to only contain the K nearest neighbours for each user
   def computeAllKNN(k: Int, sims: Map[Int, Map[Int, Double]]): Map[Int, Map[Int, Double]] = {
-    val topk = sims.keySet.map(u=>(u, knn(u,k,sims))).toMap
-    topk
+    sims.keySet.map(u=>(u, knn(u,k,sims))).toMap
   }
 
   //Can probably make this function better, but basically compute the similarity mapping

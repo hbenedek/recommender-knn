@@ -37,7 +37,7 @@ object DistributedBaseline extends App {
   println("")
   println("******************************************************")
 
-  // sbt "runMain distributed.DistributedBaseline --train data/ml-25m/r2.train --test data/ml-25m/r2.test  --separator , --json distributed-25m-4.json --master local[4]" --num_measurements 3
+  //spark-submit --class distributed.DistributedBaseline --master yarn --num-executors 1 m1_yourid-assembly-1.0.jar  --train $ML25Mr2train --test $ML25Mr2test --separator , --json distributed-25m-1.json --num_measurements 1
   println("Loading training data from: " + conf.train()) 
   val train = load(spark, conf.train(), conf.separator())
   println("Loading test data from: " + conf.test()) 
